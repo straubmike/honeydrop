@@ -1,6 +1,28 @@
 import { useId } from 'react'
 
 /** Honey dipper — head on top, handle down; two-tone wood with tall narrow grooves. */
+export function LocationPin({
+  label,
+  onClick,
+}: {
+  label: string
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      className="loc-pin"
+      aria-label={`Show ${label} on the map`}
+      onClick={(event) => {
+        event.stopPropagation()
+        onClick()
+      }}
+    >
+      <BrandMark className="pin pin--inline" />
+    </button>
+  )
+}
+
 export function BrandMark({ className = 'pin' }: { className?: string }) {
   const uid = useId().replace(/:/g, '')
   const light = `dipper-light-${uid}`

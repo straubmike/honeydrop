@@ -6,9 +6,11 @@ import {
   recurrenceLabel,
   toISODate,
 } from '../dates'
+import { parseDrawing, stringifyDrawing, type DrawingData } from '../drawing'
 import { boardExtent, resolvePin } from '../pins'
 import type { Collection, CollectionCoverPreview, NewItemInput } from '../types'
 import { Composer } from './Composer'
+import { DrawingCanvas } from './DrawingCanvas'
 import { ItemCard } from './ItemCard'
 
 interface CollectionDetailProps {
@@ -64,8 +66,10 @@ export function CollectionDetail({
 }: CollectionDetailProps) {
   const boardRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef<DragState | null>(null)
+  const seenCount = useRef(collection.items.length)
   const [boardSize, setBoardSize] = useState({ w: 900, h: 560 })
   const [drag, setDrag] = useState<DragState | null>(null)
+  const [drawing, setDrawing] = useState<{ mode: 'new' } | { mode: 'edit'; itemId: string } | null>(null)
 
   useEffect(() => {
     const el = boardRef.current
@@ -76,6 +80,19 @@ export function CollectionDetail({
     observer.observe(el)
     return () => observer.disconnect()
   }, [])
+
+  useEffect(() => {
+    const count = collection.items.length
+    if (count > seenCount.current) {
+      const newest = collection.items[count - 1]
+      const reveal = () => {
+        const node = boardRef.current?.querySelector(`[data-item-id="${newest?.id}"]`)
+        node?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' })
+      }
+      requestAnimationFrame(() => requestAnimationFrame(reveal))
+    }
+    seenCount.current = count
+  }, [collection.items])
 
   useEffect(() => {
     if (!drag?.id) return
@@ -210,6 +227,9 @@ export function CollectionDetail({
                   onBringToFront={() => onBringItemToFront(item.id)}
                   collectionCoverPreview={collection.coverPreview}
                   onSetCollectionCover={onSetCollectionCover}
+                  onEditDrawing={
+                    item.type === 'drawing' ? () => setDrawing({ mode: 'edit', itemId: item.id }) : undefined
+                  }
                 />
               )
             })}
@@ -217,7 +237,27 @@ export function CollectionDetail({
         )}
       </div>
 
-      <Composer onAdd={(input) => onAddItem(input, boardSize.w)} />
+      <Composer onAdd={(input) => onAddItem(input, boardSize.w)} onDraw={() => setDrawing({ mode: 'new' })} />
+
+      {drawing ? (
+        <DrawingCanvas
+          initial={
+            drawing.mode === 'edit'
+              ? parseDrawing(collection.items.find((item) => item.id === drawing.itemId)?.content ?? '')
+              : null
+          }
+          onClose={() => setDrawing(null)}
+          onSave={(data: DrawingData) => {
+            const content = stringifyDrawing(data)
+            if (drawing.mode === 'new') {
+              void onAddItem({ type: 'drawing', content }, boardSize.w)
+            } else {
+              onContent(drawing.itemId, content)
+            }
+            setDrawing(null)
+          }}
+        />
+      ) : null}
     </section>
   )
 }

@@ -1,6 +1,7 @@
 import { useEffect, useId, useState, type FormEvent } from 'react'
 import { uid } from '../dates'
-import type { Collection, CollectionKind, Recurrence, Schedule } from '../types'
+import type { Collection, CollectionKind, GeoPoint, Recurrence, Schedule } from '../types'
+import { LocationPicker } from './LocationPicker'
 
 interface CollectionFormProps {
   kind: CollectionKind
@@ -21,6 +22,7 @@ export function CollectionForm({ kind, initial, defaultDate, onClose, onSave }: 
   const [startTime, setStartTime] = useState(initial?.schedule?.startTime ?? '09:00')
   const [endTime, setEndTime] = useState(initial?.schedule?.endTime ?? '10:00')
   const [recurrence, setRecurrence] = useState<Recurrence>(initial?.schedule?.recurrence ?? 'none')
+  const [location, setLocation] = useState<GeoPoint | undefined>(initial?.location)
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -58,6 +60,7 @@ export function CollectionForm({ kind, initial, defaultDate, onClose, onSave }: 
       createdAt: initial?.createdAt ?? now,
       updatedAt: now,
       schedule,
+      location: kind === 'calendar' ? location : initial?.location,
       coverPreview: initial?.coverPreview,
       items: initial?.items ?? [],
     })
@@ -155,6 +158,11 @@ export function CollectionForm({ kind, initial, defaultDate, onClose, onSave }: 
                 <option value="monthly">Every month</option>
               </select>
             </label>
+
+            <div className="field">
+              <span>Location</span>
+              <LocationPicker value={location} onChange={setLocation} />
+            </div>
           </>
         ) : null}
 

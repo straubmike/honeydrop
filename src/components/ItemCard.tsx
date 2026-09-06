@@ -10,7 +10,9 @@ import {
 } from '../images'
 import { fetchRemoteMediaFile } from '../linkPreview'
 import type { CollectionCoverPreview, Item } from '../types'
+import { parseDrawing } from '../drawing'
 import { EmojiPicker, LinkChip } from './Composer'
+import { DrawingPreview } from './DrawingCanvas'
 import { MediaLightbox, type LightboxSlide } from './MediaLightbox'
 import { MediaPart } from './Media'
 
@@ -32,10 +34,11 @@ interface ItemCardProps {
   onBringToFront: () => void
   collectionCoverPreview?: CollectionCoverPreview
   onSetCollectionCover: (cover: CollectionCoverPreview) => void
+  onEditDrawing?: () => void
 }
 
 const CARD_INTERACTIVE =
-  'button, a, input, textarea, select, video, audio, .polaroid__open, .link-chip, .caption-form, .item__link-form, .item__import, .reply-form, .emoji-picker, .reaction-wrap'
+  'button, a, input, textarea, select, video, audio, .polaroid__open, .link-chip, .caption-form, .item__link-form, .item__import, .reply-form, .emoji-picker, .reaction-wrap, .item__drawing-wrap'
 
 function isCardBackgroundClick(target: EventTarget | null, card: HTMLElement): boolean {
   if (!(target instanceof HTMLElement)) return false
@@ -134,6 +137,7 @@ export function ItemCard({
   onBringToFront,
   collectionCoverPreview,
   onSetCollectionCover,
+  onEditDrawing,
 }: ItemCardProps) {
   const [replyOpen, setReplyOpen] = useState(false)
   const [replyText, setReplyText] = useState('')
@@ -203,6 +207,7 @@ export function ItemCard({
     isCollectionCoverPreview(collectionCoverPreview, item.id, coverForCurrentSlide)
   const showCaption = media.length > 0 || item.type === 'link'
   const canSeeMore = item.type === 'link' && (item.previewCandidates?.length ?? 0) > 2
+  const drawing = item.type === 'drawing' ? parseDrawing(item.content) : null
 
   useEffect(() => {
     setTextDraft(item.content)
@@ -380,6 +385,12 @@ export function ItemCard({
         <CaptionEditor value={item.caption} placeholder="Add a caption" onSave={onCaption} />
       ) : null}
 
+      {item.type === 'drawing' ? (
+        <button type="button" className="item__drawing-wrap" onClick={onEditDrawing}>
+          {drawing ? <DrawingPreview data={drawing} /> : <span className="muted">Drawing</span>}
+        </button>
+      ) : null}
+
       {item.type === 'text' ? (
         editingText ? (
           <form
@@ -417,9 +428,13 @@ export function ItemCard({
         )
       ) : null}
 
-      {isMediaItem(item) || item.type === 'link' ? (
+      {isMediaItem(item) || item.type === 'link' || item.type === 'drawing' ? (
         <div className="item__tools">
-          {isMediaItem(item) ? (
+          {item.type === 'drawing' ? (
+            <button type="button" className="text-btn" onClick={onEditDrawing}>
+              Edit
+            </button>
+          ) : isMediaItem(item) ? (
             importOpen ? (
               <div className="item__import">
                 <button

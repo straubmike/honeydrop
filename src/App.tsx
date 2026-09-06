@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { BrandMark } from './components/BrandMark'
+import { BrandMark, LocationPin } from './components/BrandMark'
 import { CalendarView } from './components/CalendarView'
 import { CollectionDetail } from './components/CollectionDetail'
 import { CollectionForm } from './components/CollectionForm'
 import { HomeView } from './components/HomeView'
 import { IdeasView } from './components/IdeasView'
 import { InviteModal } from './components/InviteModal'
-import type { BoardMember, Collection, CollectionKind, Tab } from './types'
+import type { BoardMember, Collection, CollectionKind, GeoPoint, Tab } from './types'
 import { useApp } from './useBoard'
 
 function boardSubtitle(members: BoardMember[]): string {
@@ -95,6 +95,7 @@ export default function App() {
     return new Date(now.getFullYear(), now.getMonth(), 1)
   })
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
+  const [mapFocus, setMapFocus] = useState<GeoPoint | null>(null)
 
   const board = app.activeBoard
   const collections = board?.collections ?? []
@@ -105,6 +106,13 @@ export default function App() {
   const editing = collections.find((collection) => collection.id === editingId) ?? null
   const partner = board?.members.find((member) => member.userId !== app.userId)
   const hasPartner = Boolean(partner)
+  const me = board?.members.find((member) => member.userId === app.userId)
+
+  const focusLocation = (point: GeoPoint) => {
+    setSelectedId(null)
+    setTab('calendar')
+    setMapFocus(point)
+  }
 
   useEffect(() => {
     if (!board) {
@@ -204,35 +212,45 @@ export default function App() {
           <button type="button" className="back-btn" onClick={app.closeBoard} aria-label="Back to all boards">
             ←
           </button>
-          <label className="who">
+          <div className="who">
             <span>You</span>
-            <input
-              value={app.displayName}
-              onChange={(event) => app.setDisplayName(event.target.value)}
-              maxLength={32}
-              placeholder="You"
-              aria-label="Your name"
-            />
-          </label>
-          <label className="who">
-            <span>Partner</span>
-            {hasPartner ? (
+            <div className="who__field">
+              {me?.location ? (
+                <LocationPin label={me.name || 'You'} onClick={() => focusLocation(me.location!)} />
+              ) : null}
               <input
-                value={partner?.name ?? 'Partner'}
-                readOnly
-                aria-label="Partner name"
+                value={app.displayName}
+                onChange={(event) => app.setDisplayName(event.target.value)}
+                maxLength={32}
+                placeholder="You"
+                aria-label="Your name"
               />
-            ) : (
-              <button
-                type="button"
-                className="who__invite"
-                onClick={() => setInviteOpen(true)}
-                aria-label="Invite partner"
-              >
-                Partner
-              </button>
-            )}
-          </label>
+            </div>
+          </div>
+          <div className="who">
+            <span>Partner</span>
+            <div className="who__field">
+              {partner?.location ? (
+                <LocationPin label={partner.name || 'Partner'} onClick={() => focusLocation(partner.location!)} />
+              ) : null}
+              {hasPartner ? (
+                <input
+                  value={partner?.name ?? 'Partner'}
+                  readOnly
+                  aria-label="Partner name"
+                />
+              ) : (
+                <button
+                  type="button"
+                  className="who__invite"
+                  onClick={() => setInviteOpen(true)}
+                  aria-label="Invite partner"
+                >
+                  Partner
+                </button>
+              )}
+            </div>
+          </div>
         </div>
       </header>
 
@@ -256,12 +274,18 @@ export default function App() {
       {tab === 'calendar' ? (
         <CalendarView
           collections={collections}
+          members={board.members}
+          userId={app.userId}
           cursor={cursor}
           selectedDate={selectedDate}
           onCursor={setCursor}
           onSelectDate={setSelectedDate}
           onOpen={setSelectedId}
           onCreate={() => openForm('calendar')}
+          onSetMyLocation={app.setMemberLocation}
+          focusPoint={mapFocus}
+          onFocusLocation={focusLocation}
+          onMapFocused={() => setMapFocus(null)}
         />
       ) : (
         <IdeasView

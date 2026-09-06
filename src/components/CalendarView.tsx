@@ -1,26 +1,39 @@
 import { CollectionCard } from './CollectionCard'
 import { MonthGrid } from './MonthGrid'
-import type { Collection } from '../types'
+import { BoardMap } from './BoardMap'
+import type { BoardMember, Collection, GeoPoint } from '../types'
 import { compareUpcoming, datesInMonth, formatLongDate } from '../dates'
 
 interface CalendarViewProps {
   collections: Collection[]
+  members: BoardMember[]
+  userId: string
   cursor: Date
   selectedDate: string | null
   onCursor: (date: Date) => void
   onSelectDate: (iso: string | null) => void
   onOpen: (id: string) => void
   onCreate: () => void
+  onSetMyLocation: (location?: GeoPoint) => void
+  focusPoint?: GeoPoint | null
+  onFocusLocation?: (point: GeoPoint) => void
+  onMapFocused?: () => void
 }
 
 export function CalendarView({
   collections,
+  members,
+  userId,
   cursor,
   selectedDate,
   onCursor,
   onSelectDate,
   onOpen,
   onCreate,
+  onSetMyLocation,
+  focusPoint,
+  onFocusLocation,
+  onMapFocused,
 }: CalendarViewProps) {
   const events = collections.filter((collection) => collection.kind === 'calendar')
   const monthEvents = selectedDate
@@ -30,7 +43,17 @@ export function CalendarView({
     : [...events].sort(compareUpcoming)
 
   return (
-    <div className="calendar-layout">
+    <div className="calendar-page">
+      <BoardMap
+        members={members}
+        userId={userId}
+        events={events}
+        focusPoint={focusPoint}
+        onOpenEvent={onOpen}
+        onSetMyLocation={onSetMyLocation}
+        onFocused={onMapFocused}
+      />
+      <div className="calendar-layout">
       <MonthGrid
         cursor={cursor}
         collections={events}
@@ -69,11 +92,13 @@ export function CalendarView({
                 key={collection.id}
                 collection={collection}
                 onOpen={() => onOpen(collection.id)}
+                onFocusLocation={onFocusLocation}
               />
             ))}
           </div>
         )}
       </section>
+      </div>
     </div>
   )
 }

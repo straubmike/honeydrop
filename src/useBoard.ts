@@ -13,6 +13,7 @@ import type {
   CollectionCoverPreview,
   CollectionKind,
   IdeaBoard,
+  GeoPoint,
   Item,
   NewItemInput,
   Reply,
@@ -197,7 +198,7 @@ export function useApp() {
         ? await filesToAttachments(input.files, input.fileSource ?? 'upload')
         : []
       const type =
-        input.type === 'link' || input.type === 'text'
+        input.type === 'link' || input.type === 'text' || input.type === 'drawing'
           ? input.type
           : (attachments[0]?.type ?? input.type)
       const collection = activeBoard?.collections.find((entry) => entry.id === collectionId)
@@ -541,6 +542,18 @@ export function useApp() {
     )
   }, [activeBoardId])
 
+  const setMemberLocation = useCallback((location?: GeoPoint) => {
+    if (!activeBoardId) return
+    setState((prev) =>
+      mapBoard(prev, activeBoardId, (board) => ({
+        ...board,
+        members: board.members.map((member) =>
+          member.userId === prev.userId ? { ...member, location } : member,
+        ),
+      })),
+    )
+  }, [activeBoardId])
+
   const setCollectionCover = useCallback((collectionId: string, cover: CollectionCoverPreview) => {
     if (!activeBoardId) return
     setState((prev) =>
@@ -592,6 +605,7 @@ export function useApp() {
     deleteBoard,
     setBoardTitle,
     setDisplayName,
+    setMemberLocation,
     upsertCollection,
     deleteCollection,
     addItem,

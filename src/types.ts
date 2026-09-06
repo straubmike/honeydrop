@@ -1,7 +1,7 @@
 export type Tab = 'calendar' | 'ideas'
 export type CollectionKind = 'calendar' | 'idea'
 export type MediaKind = 'image' | 'video' | 'audio'
-export type ItemType = MediaKind | 'link' | 'text'
+export type ItemType = MediaKind | 'link' | 'text' | 'drawing'
 export type Recurrence = 'none' | 'yearly' | 'monthly'
 
 export interface Reaction {
@@ -53,6 +53,12 @@ export interface NewItemInput {
   previewCandidates?: string[]
 }
 
+export interface GeoPoint {
+  lat: number
+  lng: number
+  label?: string
+}
+
 export interface Schedule {
   startDate: string
   endDate: string
@@ -76,6 +82,7 @@ export interface Collection {
   createdAt: string
   updatedAt: string
   schedule?: Schedule
+  location?: GeoPoint
   coverPreview?: CollectionCoverPreview
   items: Item[]
 }
@@ -83,6 +90,7 @@ export interface Collection {
 export interface BoardMember {
   userId: string
   name: string
+  location?: GeoPoint
 }
 
 export interface IdeaBoard {

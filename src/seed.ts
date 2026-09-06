@@ -157,6 +157,37 @@ export function seedState(): AppState {
     ],
   }
 
+  const picnic: Collection = {
+    id: uid(),
+    kind: 'calendar',
+    title: 'Picnic',
+    description: 'Blanket, snacks, and a soft afternoon outside.',
+    createdAt: ago(60 * 24 * 3),
+    updatedAt: ago(60 * 2),
+    schedule: {
+      startDate: daysFromNow(0),
+      endDate: daysFromNow(0),
+      allDay: true,
+      recurrence: 'none',
+    },
+    location: {
+      lat: 47.6615,
+      lng: -122.4057,
+      label: 'Discovery Park, Seattle, Washington, United States',
+    },
+    items: [
+      item({
+        type: 'text',
+        author: 'Alex',
+        createdAt: ago(60 * 5),
+        content: 'I’ll bring the thermos and the plaid blanket. You grab fruit?',
+        x: 52,
+        y: 56,
+        z: 1,
+      }),
+    ],
+  }
+
   const gifts: Collection = {
     id: uid(),
     kind: 'idea',
@@ -247,9 +278,17 @@ export function seedState(): AppState {
         inviteCode: seedInviteCode(),
         members: [
           { userId, name: 'You' },
-          { userId: partnerId, name: 'Alex' },
+          {
+            userId: partnerId,
+            name: 'Alex',
+            location: {
+              lat: 45.5152,
+              lng: -122.6784,
+              label: 'Portland, Multnomah County, Oregon, United States',
+            },
+          },
         ],
-        collections: [birthday, trip, anniversary, gifts, nest],
+        collections: [birthday, trip, anniversary, picnic, gifts, nest],
       },
     ],
   }
