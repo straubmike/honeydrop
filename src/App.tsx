@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { BrandMark } from './components/BrandMark'
 import { CalendarView } from './components/CalendarView'
 import { CollectionDetail } from './components/CollectionDetail'
 import { CollectionForm } from './components/CollectionForm'
@@ -193,7 +194,7 @@ export default function App() {
     <div className="shell">
       <header className="masthead">
         <div className="brand">
-          <span className="pin" aria-hidden="true" />
+          <BrandMark />
           <div>
             <BoardTitle value={board.title} onSave={app.setBoardTitle} />
             <p className="brand__sub">{boardSubtitle(board.members)}</p>

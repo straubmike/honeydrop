@@ -1,5 +1,6 @@
 import { useId, useState, type FormEvent } from 'react'
 import type { IdeaBoard } from '../types'
+import { BrandMark } from './BrandMark'
 
 interface HomeViewProps {
   boards: IdeaBoard[]
@@ -66,7 +67,7 @@ export function HomeView({
     <div className="shell">
       <header className="masthead">
         <div className="brand">
-          <span className="pin" aria-hidden="true" />
+          <BrandMark />
           <div>
             <h1>Honey Drop</h1>
             <p className="brand__sub">Your shared idea boards</p>

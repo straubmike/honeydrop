@@ -228,15 +228,11 @@ img {
 }
 
 .pin {
-  width: 18px;
-  height: 42px;
-  border-radius: 99px;
-  background:
-    radial-gradient(circle at 50% 8px, var(--card) 5px, var(--terracotta) 6px, var(--terracotta) 11px, transparent 12px),
-    linear-gradient(var(--terracotta-deep), var(--terracotta-deep));
-  background-repeat: no-repeat;
-  background-size: 100% 100%, 3px 28px;
-  background-position: center top, center 12px;
+  width: 22px;
+  height: 44px;
+  flex: none;
+  display: block;
+  overflow: visible;
 }
 
 .who {
