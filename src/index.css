@@ -1470,6 +1470,11 @@ body.is-dragging .ideas--compact {
 }
 
 .link-chip__url {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
   overflow-wrap: anywhere;
   word-break: break-word;
 }

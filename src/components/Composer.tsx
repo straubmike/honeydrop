@@ -7,6 +7,7 @@ import {
   MAX_MEDIA_BYTES,
   normalizeUrl,
   parseEntryUrl,
+  shortenUrlDisplay,
 } from '../images'
 import { fetchLinkPreview, fetchRemoteMediaFile } from '../linkPreview'
 import type { MediaKind, NewItemInput } from '../types'
@@ -129,10 +130,7 @@ export function Composer({ onAdd, onDraw }: ComposerProps) {
     setPreviewBusy(true)
     try {
       const file = await fetchRemoteMediaFile(entryUrl)
-      if (!file || !classifyMedia(file)) {
-        window.alert('Could not fetch that file.')
-        return false
-      }
+      if (!file || !classifyMedia(file)) return false
       addFiles([file], { replace: true })
       return true
     } finally {
@@ -480,11 +478,12 @@ export function LinkChip({
   caption?: string
   onRemove?: () => void
 }) {
+  const label = caption?.trim() || shortenUrlDisplay(url)
   return (
     <div className="link-chip-wrap">
-      <a className="link-chip" href={url} target="_blank" rel="noreferrer">
+      <a className="link-chip" href={url} target="_blank" rel="noreferrer" title={url}>
         <span className="link-chip__host">{hostFromUrl(url)}</span>
-        <span className="link-chip__url">{caption || url}</span>
+        <span className="link-chip__url">{label}</span>
       </a>
       {onRemove ? (
         <button type="button" className="link-chip__remove" aria-label="Remove link" onClick={onRemove}>

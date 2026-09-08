@@ -124,3 +124,18 @@ export function hostFromUrl(url: string): string {
     return url
   }
 }
+
+/** Compact path for link chips — pathname (+ short query hint), truncated. */
+export function shortenUrlDisplay(url: string, maxLen = 64): string {
+  try {
+    const parsed = new URL(url)
+    let path = parsed.pathname === '/' ? '' : parsed.pathname
+    if (parsed.search) path += '…'
+    const display = path || parsed.hostname.replace(/^www\./, '')
+    if (display.length <= maxLen) return display
+    return `${display.slice(0, Math.max(1, maxLen - 1))}…`
+  } catch {
+    if (url.length <= maxLen) return url
+    return `${url.slice(0, Math.max(1, maxLen - 1))}…`
+  }
+}
