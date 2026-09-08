@@ -6,12 +6,14 @@ export type Recurrence = 'none' | 'yearly' | 'monthly'
 
 export interface Reaction {
   emoji: string
-  authors: string[]
+  /** User ids of people who reacted with this emoji. */
+  authorIds: string[]
 }
 
 export interface Reply {
   id: string
   author: string
+  authorUserId: string
   text: string
   createdAt: string
 }
@@ -30,6 +32,7 @@ export interface Item {
   id: string
   type: ItemType
   author: string
+  authorUserId: string
   createdAt: string
   content: string
   caption?: string

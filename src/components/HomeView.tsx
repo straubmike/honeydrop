@@ -6,10 +6,16 @@ interface HomeViewProps {
   boards: IdeaBoard[]
   userId: string
   displayName: string
+  busy?: boolean
   onDisplayName: (name: string) => void
   onOpen: (boardId: string) => void
   onCreate: (title: string) => void
-  onJoin: (code: string) => { ok: true; boardId: string } | { ok: false; reason: string }
+  onJoin: (
+    code: string,
+  ) =>
+    | { ok: true; boardId: string }
+    | { ok: false; reason: string }
+    | Promise<{ ok: true; boardId: string } | { ok: false; reason: string }>
   onRequestDelete: (boardId: string) => void
   onCancelDelete: (boardId: string) => void
   onConfirmDelete: (boardId: string) => void
@@ -25,6 +31,7 @@ export function HomeView({
   boards,
   userId,
   displayName,
+  busy = false,
   onDisplayName,
   onOpen,
   onCreate,
@@ -39,6 +46,7 @@ export function HomeView({
   const [title, setTitle] = useState('')
   const [code, setCode] = useState('')
   const [joinError, setJoinError] = useState('')
+  const [joinBusy, setJoinBusy] = useState(false)
   const createHeadingId = useId()
   const joinHeadingId = useId()
   const deleteHeadingId = useId()
@@ -53,14 +61,19 @@ export function HomeView({
 
   const submitJoin = (event: FormEvent) => {
     event.preventDefault()
-    const result = onJoin(code)
-    if (!result.ok) {
-      setJoinError(result.reason)
-      return
-    }
-    setCode('')
+    setJoinBusy(true)
     setJoinError('')
-    setJoining(false)
+    void Promise.resolve(onJoin(code))
+      .then((result) => {
+        if (!result.ok) {
+          setJoinError(result.reason)
+          return
+        }
+        setCode('')
+        setJoinError('')
+        setJoining(false)
+      })
+      .finally(() => setJoinBusy(false))
   }
 
   const confirmDeleteRequest = () => {
@@ -100,6 +113,11 @@ export function HomeView({
         </header>
 
         <div className="board-list">
+          {boards.length === 0 ? (
+            <p className="muted">
+              No boards yet. Create one, or join your partner with an invite code.
+            </p>
+          ) : null}
           {boards.map((board) => {
             const ideaCount = board.collections.filter((entry) => entry.kind === 'idea').length
             const pending = board.pendingDeletion
@@ -201,11 +219,11 @@ export function HomeView({
               />
             </label>
             <div className="modal__actions">
-              <button type="button" className="ghost" onClick={() => setCreating(false)}>
+              <button type="button" className="ghost" onClick={() => setCreating(false)} disabled={busy}>
                 Cancel
               </button>
-              <button type="submit" className="primary">
-                Create
+              <button type="submit" className="primary" disabled={busy}>
+                {busy ? 'Creating…' : 'Create'}
               </button>
             </div>
           </form>
@@ -240,11 +258,16 @@ export function HomeView({
             </label>
             {joinError ? <p className="field-error">{joinError}</p> : null}
             <div className="modal__actions">
-              <button type="button" className="ghost" onClick={() => setJoining(false)}>
+              <button
+                type="button"
+                className="ghost"
+                onClick={() => setJoining(false)}
+                disabled={joinBusy || busy}
+              >
                 Cancel
               </button>
-              <button type="submit" className="primary">
-                Join
+              <button type="submit" className="primary" disabled={joinBusy || busy}>
+                {joinBusy || busy ? 'Joining…' : 'Join'}
               </button>
             </div>
           </form>

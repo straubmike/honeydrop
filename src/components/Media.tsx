@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { getMedia, isStoredMedia } from '../mediaStore'
+import { isStoredMedia, resolveMediaBlob } from '../mediaStore'
+import { fetchPreviewFiles } from '../linkPreview'
 import type { CollectionCover } from '../attachments'
 import type { Attachment } from '../types'
 
@@ -16,7 +17,7 @@ export function useMediaSrc(content: string, id: string): string | null | undefi
 
     let cancelled = false
     let objectUrl: string | undefined
-    void getMedia(id).then((blob) => {
+    void resolveMediaBlob(content, id).then((blob) => {
       if (cancelled) return
       if (!blob) {
         setSrc(null)
@@ -112,20 +113,26 @@ export function MediaThumb({ attachment, className }: { attachment: Attachment; 
 }
 
 function useRemoteCoverSrc(url: string): string | null | undefined {
-  const [src, setSrc] = useState<string | null | undefined>(undefined)
+  const [src, setSrc] = useState<string | null | undefined>(() => (url ? undefined : null))
 
   useEffect(() => {
+    if (!url) {
+      setSrc(null)
+      return
+    }
+
     let cancelled = false
     let objectUrl: string | undefined
-    void fetch(`/api/link-image?url=${encodeURIComponent(url)}`)
-      .then((response) => (response.ok ? response.blob() : null))
-      .then((blob) => {
+    setSrc(undefined)
+    void fetchPreviewFiles([url])
+      .then((files) => {
         if (cancelled) return
-        if (!blob || blob.size < 80) {
+        const file = files[0]
+        if (!file) {
           setSrc(null)
           return
         }
-        objectUrl = URL.createObjectURL(blob)
+        objectUrl = URL.createObjectURL(file)
         setSrc(objectUrl)
       })
       .catch(() => {
@@ -148,11 +155,13 @@ export function CollectionCoverThumb({
   cover: CollectionCover
   className?: string
 }) {
+  const remoteUrl = cover.kind === 'url' ? cover.url : ''
+  const remoteSrc = useRemoteCoverSrc(remoteUrl)
+
   if (cover.kind === 'attachment') {
     return <MediaThumb attachment={cover.attachment} className={className} />
   }
 
-  const src = useRemoteCoverSrc(cover.url)
-  if (src === undefined || !src) return <div className={className} aria-hidden="true" />
-  return <img src={src} alt="" className={className} />
+  if (remoteSrc === undefined || !remoteSrc) return <div className={className} aria-hidden="true" />
+  return <img src={remoteSrc} alt="" className={className} />
 }

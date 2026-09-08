@@ -1,3 +1,5 @@
+import { deleteBoardMedia, downloadBoardMedia, isSupabaseMedia } from './api/media'
+
 const DB_NAME = 'ideaboard'
 const STORE = 'media'
 const VERSION = 1
@@ -44,6 +46,29 @@ export async function deleteMedia(id: string): Promise<void> {
   })
 }
 
-export function isStoredMedia(content: string): boolean {
+export function isIdbMedia(content: string): boolean {
   return content.startsWith('idb:')
+}
+
+export function isStoredMedia(content: string): boolean {
+  return isIdbMedia(content) || isSupabaseMedia(content)
+}
+
+/** Resolve blob for idb: or sb: refs. `id` is only used for legacy idb keys. */
+export async function resolveMediaBlob(content: string, id: string): Promise<Blob | undefined> {
+  if (isSupabaseMedia(content)) return downloadBoardMedia(content)
+  if (isIdbMedia(content)) return getMedia(id)
+  return undefined
+}
+
+export async function removeStoredMedia(content: string, id: string): Promise<void> {
+  if (isSupabaseMedia(content)) {
+    try {
+      await deleteBoardMedia(content)
+    } catch {
+      /* best-effort */
+    }
+    return
+  }
+  if (isIdbMedia(content)) await deleteMedia(id)
 }

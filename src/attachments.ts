@@ -1,4 +1,4 @@
-import { isStoredMedia, deleteMedia } from './mediaStore'
+import { isStoredMedia, removeStoredMedia } from './mediaStore'
 import type { Attachment, Collection, CollectionCoverPreview, Item, MediaKind } from './types'
 
 export type CollectionCover =
@@ -85,6 +85,6 @@ export function isMediaKind(type: Item['type']): type is MediaKind {
 
 export function clearItemMedia(item: Item) {
   for (const part of itemMediaAttachments(item)) {
-    if (isStoredMedia(part.content)) void deleteMedia(part.id)
+    if (isStoredMedia(part.content)) void removeStoredMedia(part.content, part.id)
   }
 }

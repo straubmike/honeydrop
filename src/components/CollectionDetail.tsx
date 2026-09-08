@@ -16,7 +16,8 @@ import { ItemCard } from './ItemCard'
 
 interface CollectionDetailProps {
   collection: Collection
-  currentName: string
+  currentUserId: string
+  nameByUserId: Record<string, string>
   onBack: () => void
   onEdit: () => void
   onDelete: () => void
@@ -110,7 +111,8 @@ function insertIndexFromPoint(
 
 export function CollectionDetail({
   collection,
-  currentName,
+  currentUserId,
+  nameByUserId,
   onBack,
   onEdit,
   onDelete,
@@ -411,7 +413,8 @@ export function CollectionDetail({
     <ItemCard
       key={options.floating ? `float-${item.id}` : item.id}
       item={item}
-      currentName={currentName}
+      currentUserId={currentUserId}
+      nameByUserId={nameByUserId}
       dragging={Boolean(options.dragging)}
       layout={options.layout}
       floating={options.floating}

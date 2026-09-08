@@ -136,6 +136,41 @@ export default function App() {
     setEditingId(collection?.id ?? null)
   }
 
+  if (!app.ready) {
+    return (
+      <div className="shell">
+        <header className="masthead">
+          <div className="brand">
+            <BrandMark />
+            <div>
+              <h1>Honey Drop</h1>
+              <p className="brand__sub">Loading your boards…</p>
+            </div>
+          </div>
+        </header>
+      </div>
+    )
+  }
+
+  if (app.bootError) {
+    return (
+      <div className="shell">
+        <header className="masthead">
+          <div className="brand">
+            <BrandMark />
+            <div>
+              <h1>Honey Drop</h1>
+              <p className="brand__sub">Setup needed</p>
+            </div>
+          </div>
+        </header>
+        <section className="home">
+          <p className="muted">{app.bootError}</p>
+        </section>
+      </div>
+    )
+  }
+
   if (!board) {
     return (
       <HomeView
@@ -144,21 +179,27 @@ export default function App() {
         displayName={app.displayName}
         onDisplayName={app.setDisplayName}
         onOpen={app.openBoard}
-        onCreate={app.createBoard}
+        onCreate={(title) => void app.createBoard(title)}
         onJoin={app.joinBoard}
         onRequestDelete={app.requestBoardDeletion}
         onCancelDelete={app.cancelBoardDeletion}
         onConfirmDelete={app.confirmBoardDeletion}
+        busy={app.busy}
       />
     )
   }
+
+  const nameByUserId = Object.fromEntries(
+    board.members.map((member) => [member.userId, member.name.trim() || 'You']),
+  )
 
   if (selected) {
     return (
       <div className="shell shell--detail">
         <CollectionDetail
           collection={selected}
-          currentName={app.displayName.trim() || 'You'}
+          currentUserId={app.userId}
+          nameByUserId={nameByUserId}
           onBack={() => setSelectedId(null)}
           onEdit={() => openForm(selected.kind, selected)}
           onDelete={() => {

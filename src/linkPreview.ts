@@ -1,4 +1,5 @@
 import { classifyMedia, isDirectMediaUrl, mediaKindFromMime, mediaKindFromUrl } from './images'
+import { getSupabaseAnonKey, getSupabaseUrl, isSupabaseConfigured } from './lib/supabase'
 import type { MediaKind } from './types'
 
 export interface LinkPreview {
@@ -13,9 +14,23 @@ function mediaFileName(kind: MediaKind, mime: string): string {
   return `media.${subtype}`
 }
 
+function linkApiUrl(op: 'link-preview' | 'link-image' | 'link-media', target: string): string {
+  if (import.meta.env.DEV || !isSupabaseConfigured) {
+    return `/api/${op}?url=${encodeURIComponent(target)}`
+  }
+  return `${getSupabaseUrl()}/functions/v1/link-api?op=${op}&url=${encodeURIComponent(target)}`
+}
+
+function linkApiHeaders(): HeadersInit | undefined {
+  if (import.meta.env.DEV || !isSupabaseConfigured) return undefined
+  return {
+    Authorization: `Bearer ${getSupabaseAnonKey()}`,
+  }
+}
+
 export async function fetchRemoteMediaFile(url: string): Promise<File | null> {
   try {
-    const response = await fetch(`/api/link-media?url=${encodeURIComponent(url)}`)
+    const response = await fetch(linkApiUrl('link-media', url), { headers: linkApiHeaders() })
     if (!response.ok) return null
     const blob = await response.blob()
     if (blob.size < 80) return null
@@ -31,10 +46,10 @@ export async function fetchRemoteMediaFile(url: string): Promise<File | null> {
 
 export function previewPairUrls(candidates: string[], startIndex = 0): string[] {
   if (!candidates.length) return []
-  if (candidates.length === 1) return [candidates[0]]
-  const first = candidates[((startIndex % candidates.length) + candidates.length) % candidates.length]
+  if (candidates.length === 1) return [candidates[0]!]
+  const first = candidates[((startIndex % candidates.length) + candidates.length) % candidates.length]!
   const second =
-    candidates[(((startIndex + 1) % candidates.length) + candidates.length) % candidates.length]
+    candidates[(((startIndex + 1) % candidates.length) + candidates.length) % candidates.length]!
   return first === second ? [first] : [first, second]
 }
 
@@ -48,7 +63,7 @@ export async function fetchPreviewFiles(imageUrls: string[]): Promise<File[]> {
   const files: File[] = []
   for (const imageUrl of imageUrls) {
     try {
-      const image = await fetch(`/api/link-image?url=${encodeURIComponent(imageUrl)}`)
+      const image = await fetch(linkApiUrl('link-image', imageUrl), { headers: linkApiHeaders() })
       if (!image.ok) continue
       const blob = await image.blob()
       if (blob.size < 80) continue
@@ -68,7 +83,7 @@ export async function fetchLinkPreview(pageUrl: string): Promise<LinkPreview> {
     return { candidates: [], files: [] }
   }
 
-  const response = await fetch(`/api/link-preview?url=${encodeURIComponent(pageUrl)}`)
+  const response = await fetch(linkApiUrl('link-preview', pageUrl), { headers: linkApiHeaders() })
   if (!response.ok) return { candidates: [], files: [] }
   const data = (await response.json()) as {
     title?: string

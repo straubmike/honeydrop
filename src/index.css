@@ -400,7 +400,15 @@ img {
 }
 
 .ideas .list-pane__header {
-  justify-content: flex-end;
+  justify-content: space-between;
+}
+
+.list-pane__hint {
+  margin: 0;
+  color: var(--muted);
+  font-style: italic;
+  font-size: 0.95rem;
+  line-height: 1.35;
 }
 
 .month__actions {

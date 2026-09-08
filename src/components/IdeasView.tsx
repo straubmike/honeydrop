@@ -362,6 +362,9 @@ export function IdeasView({ collections, onOpen, onCreate, onReorder }: IdeasVie
   return (
     <section className={['ideas', compact ? 'ideas--compact' : ''].filter(Boolean).join(' ')}>
       <header className="list-pane__header">
+        <p className="list-pane__hint">
+          Recipes, outfits, shopping lists, itinerary planning, etc.
+        </p>
         <button type="button" className="primary" onClick={onCreate}>
           New idea
         </button>

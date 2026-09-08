@@ -1,0 +1,5 @@
+# Minimal Supabase project config for Honey Drop edge functions.
+# Link with: supabase link --project-ref YOUR_REF
+
+[functions.link-api]
+verify_jwt = true

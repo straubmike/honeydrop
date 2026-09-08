@@ -30,3 +30,8 @@ tbaweb-handoff.zip
 TBAWEB_HANDOFF.md
 **/tbaweb_handoff_ed25519
 **/tbaweb_handoff_ed25519.pub
+
+# Env (keep .env.example)
+.env
+.env.*
+!.env.example

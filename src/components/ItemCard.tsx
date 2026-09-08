@@ -18,7 +18,8 @@ import { MediaPart } from './Media'
 
 interface ItemCardProps {
   item: Item
-  currentName: string
+  currentUserId: string
+  nameByUserId: Record<string, string>
   dragging: boolean
   pin: { x: number; y: number; z: number }
   layout?: 'freeform' | 'flow'
@@ -123,7 +124,8 @@ function CaptionEditor({
 
 export function ItemCard({
   item,
-  currentName,
+  currentUserId,
+  nameByUserId,
   dragging,
   pin,
   layout = 'freeform',
@@ -168,7 +170,7 @@ export function ItemCard({
       }
     })()
   }
-  const mine = item.author.trim() === currentName.trim()
+  const mine = item.authorUserId === currentUserId
   const media = itemMediaAttachments(item)
   const extraLinks = itemLinkAttachments(item)
   const previewCandidates = item.previewCandidates ?? []
@@ -517,16 +519,18 @@ export function ItemCard({
       <footer className="item__social">
         <div className="reactions">
           {item.reactions.map((reaction) => {
-            const active = reaction.authors.includes(currentName)
+            const authorIds = reaction.authorIds ?? []
+            const active = authorIds.includes(currentUserId)
+            const names = authorIds.map((id) => nameByUserId[id] || 'Someone')
             return (
               <button
                 key={reaction.emoji}
                 type="button"
                 className={active ? 'reaction reaction--on' : 'reaction'}
-                title={reaction.authors.join(', ')}
+                title={names.join(', ')}
                 onClick={() => onReact(reaction.emoji)}
               >
-                {reaction.emoji} {reaction.authors.length}
+                {reaction.emoji} {authorIds.length}
               </button>
             )
           })}
