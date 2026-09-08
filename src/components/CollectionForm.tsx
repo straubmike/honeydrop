@@ -80,9 +80,6 @@ export function CollectionForm({ kind, initial, defaultDate, onClose, onSave }: 
           <h2 id={headingId}>
             {initial ? 'Edit' : 'New'} {kind === 'calendar' ? 'event' : 'idea'}
           </h2>
-          <button type="button" className="icon-btn" onClick={onClose} aria-label="Close">
-            ×
-          </button>
         </header>
 
         <label className="field">

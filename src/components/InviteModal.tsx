@@ -39,9 +39,6 @@ export function InviteModal({
       >
         <header className="modal__header">
           <h2 id={headingId}>Invite to {boardTitle}</h2>
-          <button type="button" className="icon-btn" onClick={onClose} aria-label="Close">
-            ×
-          </button>
         </header>
 
         {hasPartner ? (

@@ -4,12 +4,15 @@ import { BrandMark } from './BrandMark'
 
 interface HomeViewProps {
   boards: IdeaBoard[]
+  userId: string
   displayName: string
   onDisplayName: (name: string) => void
   onOpen: (boardId: string) => void
   onCreate: (title: string) => void
   onJoin: (code: string) => { ok: true; boardId: string } | { ok: false; reason: string }
-  onDelete: (boardId: string) => void
+  onRequestDelete: (boardId: string) => void
+  onCancelDelete: (boardId: string) => void
+  onConfirmDelete: (boardId: string) => void
 }
 
 function boardBlurb(board: IdeaBoard): string {
@@ -20,12 +23,15 @@ function boardBlurb(board: IdeaBoard): string {
 
 export function HomeView({
   boards,
+  userId,
   displayName,
   onDisplayName,
   onOpen,
   onCreate,
   onJoin,
-  onDelete,
+  onRequestDelete,
+  onCancelDelete,
+  onConfirmDelete,
 }: HomeViewProps) {
   const [creating, setCreating] = useState(false)
   const [joining, setJoining] = useState(false)
@@ -57,9 +63,9 @@ export function HomeView({
     setJoining(false)
   }
 
-  const confirmDelete = () => {
+  const confirmDeleteRequest = () => {
     if (!pendingDelete) return
-    onDelete(pendingDelete.id)
+    onRequestDelete(pendingDelete.id)
     setPendingDelete(null)
   }
 
@@ -96,27 +102,72 @@ export function HomeView({
         <div className="board-list">
           {boards.map((board) => {
             const ideaCount = board.collections.filter((entry) => entry.kind === 'idea').length
+            const pending = board.pendingDeletion
+            const iRequested = pending?.requestedBy === userId
+
             return (
-              <div key={board.id} className="board-card">
+              <div
+                key={board.id}
+                className={['board-card', pending ? 'board-card--pending-delete' : '']
+                  .filter(Boolean)
+                  .join(' ')}
+              >
                 <button
                   type="button"
                   className="board-card__open"
                   onClick={() => onOpen(board.id)}
                 >
-                  <h3>{board.title}</h3>
+                  <h3>
+                    {board.title}
+                    {iRequested ? (
+                      <span className="board-card__pending-label">Awaiting Partner Confirmation</span>
+                    ) : null}
+                  </h3>
                   <p className="muted">{boardBlurb(board)}</p>
                   <p className="event-card__meta">
                     {ideaCount} {ideaCount === 1 ? 'idea' : 'ideas'}
                   </p>
                 </button>
-                <button
-                  type="button"
-                  className="board-card__delete"
-                  aria-label={`Delete ${board.title}`}
-                  onClick={() => setPendingDelete(board)}
-                >
-                  ×
-                </button>
+
+                {pending ? (
+                  <div className="board-card__pending-actions">
+                    {iRequested ? (
+                      <button
+                        type="button"
+                        className="primary"
+                        onClick={() => onCancelDelete(board.id)}
+                      >
+                        Cancel Deletion
+                      </button>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          className="primary primary--danger"
+                          onClick={() => onConfirmDelete(board.id)}
+                        >
+                          Confirm Deletion
+                        </button>
+                        <button
+                          type="button"
+                          className="primary"
+                          onClick={() => onCancelDelete(board.id)}
+                        >
+                          Cancel Deletion
+                        </button>
+                      </>
+                    )}
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    className="board-card__delete"
+                    aria-label={`Delete ${board.title}`}
+                    onClick={() => setPendingDelete(board)}
+                  >
+                    ×
+                  </button>
+                )}
               </div>
             )
           })}
@@ -138,9 +189,6 @@ export function HomeView({
           >
             <header className="modal__header">
               <h2 id={createHeadingId}>New board</h2>
-              <button type="button" className="icon-btn" onClick={() => setCreating(false)} aria-label="Close">
-                ×
-              </button>
             </header>
             <label className="field">
               <span>Title</span>
@@ -176,9 +224,6 @@ export function HomeView({
           >
             <header className="modal__header">
               <h2 id={joinHeadingId}>Join a board</h2>
-              <button type="button" className="icon-btn" onClick={() => setJoining(false)} aria-label="Close">
-                ×
-              </button>
             </header>
             <label className="field">
               <span>Invite code</span>
@@ -217,23 +262,17 @@ export function HomeView({
           >
             <header className="modal__header">
               <h2 id={deleteHeadingId}>Delete board</h2>
-              <button
-                type="button"
-                className="icon-btn"
-                onClick={() => setPendingDelete(null)}
-                aria-label="Close"
-              >
-                ×
-              </button>
             </header>
             <p className="lede">
-              Are you sure you want to delete “{pendingDelete.title.trim() || 'Ours'}”?
+              {pendingDelete.members.length >= 2
+                ? `Delete “${pendingDelete.title.trim() || 'Ours'}”? Your partner will need to confirm before it’s removed.`
+                : `Are you sure you want to delete “${pendingDelete.title.trim() || 'Ours'}”?`}
             </p>
             <div className="modal__actions">
               <button type="button" className="ghost" onClick={() => setPendingDelete(null)}>
                 Cancel
               </button>
-              <button type="button" className="primary primary--danger" onClick={confirmDelete}>
+              <button type="button" className="primary primary--danger" onClick={confirmDeleteRequest}>
                 Confirm
               </button>
             </div>

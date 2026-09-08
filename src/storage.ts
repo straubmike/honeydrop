@@ -3,6 +3,8 @@ import { seedState } from './seed'
 import { uid } from './dates'
 
 const KEY = 'ideaboard.v1'
+const DEMO_PENDING_TITLE = 'Cabin plans'
+const DEMO_PENDING_FLAG = 'ideaboard.demoPendingBoard.v1'
 
 function inviteCode(): string {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
@@ -15,6 +17,58 @@ function inviteCode(): string {
 
 export function createInviteCode(): string {
   return inviteCode()
+}
+
+/** One-shot: add a partner-initiated pending-delete board for UI review. */
+function withDemoPendingBoard(state: AppState): AppState {
+  try {
+    if (localStorage.getItem(DEMO_PENDING_FLAG)) return state
+  } catch {
+    return state
+  }
+  if (state.boards.some((board) => board.title === DEMO_PENDING_TITLE)) {
+    try {
+      localStorage.setItem(DEMO_PENDING_FLAG, '1')
+    } catch {
+      /* ignore */
+    }
+    return state
+  }
+
+  const partnerId =
+    state.boards
+      .flatMap((board) => board.members)
+      .find((member) => member.userId !== state.userId)?.userId ?? uid()
+  const partnerName =
+    state.boards
+      .flatMap((board) => board.members)
+      .find((member) => member.userId === partnerId)?.name ?? 'Alex'
+  const now = new Date().toISOString()
+
+  const demo: IdeaBoard = {
+    id: uid(),
+    title: DEMO_PENDING_TITLE,
+    createdAt: now,
+    updatedAt: now,
+    inviteCode: createInviteCode(),
+    members: [
+      { userId: state.userId, name: state.displayName.trim() || 'You' },
+      { userId: partnerId, name: partnerName },
+    ],
+    collections: [],
+    pendingDeletion: {
+      requestedBy: partnerId,
+      requestedAt: now,
+    },
+  }
+
+  try {
+    localStorage.setItem(DEMO_PENDING_FLAG, '1')
+  } catch {
+    /* ignore */
+  }
+
+  return { ...state, boards: [...state.boards, demo] }
 }
 
 function migrateLegacy(parsed: LegacyBoardState): AppState {
@@ -44,14 +98,14 @@ export function loadApp(): AppState {
     if (!raw) return seedState()
     const parsed = JSON.parse(raw) as Partial<AppState> & LegacyBoardState
     if (Array.isArray(parsed.boards)) {
-      return {
+      return withDemoPendingBoard({
         userId: parsed.userId?.trim() || uid(),
         displayName: parsed.displayName?.trim() || 'You',
         boards: parsed.boards,
-      }
+      })
     }
     if (parsed.collections && Array.isArray(parsed.collections)) {
-      return migrateLegacy(parsed)
+      return withDemoPendingBoard(migrateLegacy(parsed))
     }
     return seedState()
   } catch {

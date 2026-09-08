@@ -23,3 +23,10 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# TBAWEB deploy handoff (SSH keys and ops notes — never commit)
+secrets/
+tbaweb-handoff.zip
+TBAWEB_HANDOFF.md
+**/tbaweb_handoff_ed25519
+**/tbaweb_handoff_ed25519.pub

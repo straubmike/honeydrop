@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import { useCompactViewport } from '../useCompactViewport'
 import {
   DRAW_COLORS,
   STROKE_WIDTH,
@@ -78,7 +79,7 @@ export function DrawingCanvas({ initial, onClose, onSave }: DrawingCanvasProps) 
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const stageRef = useRef<HTMLDivElement>(null)
   const currentRef = useRef<DrawingStroke | null>(null)
-  const [compact, setCompact] = useState(() => window.matchMedia('(max-width: 860px)').matches)
+  const compact = useCompactViewport()
   const [bgIndex, setBgIndex] = useState(() => {
     if (!initial) return 0
     const index = DRAW_COLORS.indexOf(initial.background as (typeof DRAW_COLORS)[number])
@@ -91,14 +92,6 @@ export function DrawingCanvas({ initial, onClose, onSave }: DrawingCanvasProps) 
   const [live, setLive] = useState<DrawingStroke | null>(null)
 
   const background = locked ? lockedBg : DRAW_COLORS[bgIndex]
-
-  useEffect(() => {
-    const media = window.matchMedia('(max-width: 860px)')
-    const sync = () => setCompact(media.matches)
-    sync()
-    media.addEventListener('change', sync)
-    return () => media.removeEventListener('change', sync)
-  }, [])
 
   useEffect(() => {
     document.body.classList.add('draw-open')

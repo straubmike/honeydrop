@@ -101,6 +101,11 @@ export interface IdeaBoard {
   inviteCode: string
   members: BoardMember[]
   collections: Collection[]
+  /** When set, board awaits the other member’s confirmation before deleting. */
+  pendingDeletion?: {
+    requestedBy: string
+    requestedAt: string
+  }
 }
 
 export interface AppState {

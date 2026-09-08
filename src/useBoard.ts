@@ -156,6 +156,63 @@ export function useApp() {
     setActiveBoardId((current) => (current === boardId ? null : current))
   }, [])
 
+  const requestBoardDeletion = useCallback(
+    (boardId: string) => {
+      let deleteNow = false
+      setState((prev) => {
+        const board = prev.boards.find((entry) => entry.id === boardId)
+        if (!board) return prev
+        if (board.members.length < 2) {
+          deleteNow = true
+          return prev
+        }
+        return {
+          ...prev,
+          boards: prev.boards.map((entry) =>
+            entry.id === boardId
+              ? {
+                  ...entry,
+                  updatedAt: new Date().toISOString(),
+                  pendingDeletion: {
+                    requestedBy: prev.userId,
+                    requestedAt: new Date().toISOString(),
+                  },
+                }
+              : entry,
+          ),
+        }
+      })
+      if (deleteNow) deleteBoard(boardId)
+    },
+    [deleteBoard],
+  )
+
+  const cancelBoardDeletion = useCallback((boardId: string) => {
+    setState((prev) => ({
+      ...prev,
+      boards: prev.boards.map((board) =>
+        board.id === boardId
+          ? { ...board, updatedAt: new Date().toISOString(), pendingDeletion: undefined }
+          : board,
+      ),
+    }))
+  }, [])
+
+  const confirmBoardDeletion = useCallback(
+    (boardId: string) => {
+      let allowed = false
+      setState((prev) => {
+        const board = prev.boards.find((entry) => entry.id === boardId)
+        if (!board?.pendingDeletion) return prev
+        if (board.pendingDeletion.requestedBy === prev.userId) return prev
+        allowed = true
+        return prev
+      })
+      if (allowed) deleteBoard(boardId)
+    },
+    [deleteBoard],
+  )
+
   const setBoardTitle = useCallback((title: string) => {
     if (!activeBoardId) return
     const next = title.trim() || 'Ours'
@@ -568,18 +625,20 @@ export function useApp() {
     )
   }, [activeBoardId])
 
-  const reorderCollections = useCallback((kind: CollectionKind, activeId: string, overId: string) => {
+  const reorderCollections = useCallback((kind: CollectionKind, activeId: string, toIndex: number) => {
     if (!activeBoardId) return
     setState((prev) =>
       mapBoard(prev, activeBoardId, (board) => {
         const ofKind = board.collections.filter((collection) => collection.kind === kind)
         const fromIndex = ofKind.findIndex((collection) => collection.id === activeId)
-        const toIndex = ofKind.findIndex((collection) => collection.id === overId)
-        if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) return board
+        if (fromIndex < 0) return board
 
         const nextOfKind = [...ofKind]
         const [moved] = nextOfKind.splice(fromIndex, 1)
-        nextOfKind.splice(toIndex, 0, moved)
+        if (!moved) return board
+        const clamped = Math.max(0, Math.min(toIndex, nextOfKind.length))
+        if (clamped === fromIndex) return board
+        nextOfKind.splice(clamped, 0, moved)
 
         let index = 0
         return {
@@ -592,6 +651,36 @@ export function useApp() {
     )
   }, [activeBoardId])
 
+  const reorderItems = useCallback(
+    (collectionId: string, activeId: string, toIndex: number) => {
+      if (!activeBoardId) return
+      setState((prev) =>
+        mapBoard(prev, activeBoardId, (board) => ({
+          ...board,
+          collections: board.collections.map((collection) => {
+            if (collection.id !== collectionId) return collection
+            const fromIndex = collection.items.findIndex((item) => item.id === activeId)
+            if (fromIndex < 0) return collection
+
+            const nextItems = [...collection.items]
+            const [moved] = nextItems.splice(fromIndex, 1)
+            if (!moved) return collection
+            const clamped = Math.max(0, Math.min(toIndex, nextItems.length))
+            if (clamped === fromIndex) return collection
+            nextItems.splice(clamped, 0, moved)
+
+            return {
+              ...collection,
+              updatedAt: new Date().toISOString(),
+              items: nextItems,
+            }
+          }),
+        })),
+      )
+    },
+    [activeBoardId],
+  )
+
   return {
     userId: state.userId,
     displayName: state.displayName,
@@ -603,6 +692,9 @@ export function useApp() {
     createBoard,
     joinBoard,
     deleteBoard,
+    requestBoardDeletion,
+    cancelBoardDeletion,
+    confirmBoardDeletion,
     setBoardTitle,
     setDisplayName,
     setMemberLocation,
@@ -616,6 +708,7 @@ export function useApp() {
     moveItem,
     bringItemToFront,
     setCollectionCover,
+    reorderItems,
     reorderCollections,
     toggleReaction,
     addReply,

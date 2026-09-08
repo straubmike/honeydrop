@@ -140,12 +140,15 @@ export default function App() {
     return (
       <HomeView
         boards={app.boards}
+        userId={app.userId}
         displayName={app.displayName}
         onDisplayName={app.setDisplayName}
         onOpen={app.openBoard}
         onCreate={app.createBoard}
         onJoin={app.joinBoard}
-        onDelete={app.deleteBoard}
+        onRequestDelete={app.requestBoardDeletion}
+        onCancelDelete={app.cancelBoardDeletion}
+        onConfirmDelete={app.confirmBoardDeletion}
       />
     )
   }
@@ -165,6 +168,7 @@ export default function App() {
           onAddItem={(input, boardWidth) => app.addItem(selected.id, input, boardWidth)}
           onDeleteItem={(itemId) => app.deleteItem(selected.id, itemId)}
           onMoveItem={(itemId, x, y, boardWidth) => app.moveItem(selected.id, itemId, x, y, boardWidth)}
+          onReorderItem={(activeId, toIndex) => app.reorderItems(selected.id, activeId, toIndex)}
           onBringItemToFront={(itemId) => app.bringItemToFront(selected.id, itemId)}
           onAddFiles={(itemId, files) => void app.addAttachments(selected.id, itemId, files)}
           onAddLink={(itemId, url) => app.addLink(selected.id, itemId, url)}
@@ -242,11 +246,11 @@ export default function App() {
               ) : (
                 <button
                   type="button"
-                  className="who__invite"
+                  className="primary who__invite"
                   onClick={() => setInviteOpen(true)}
                   aria-label="Invite partner"
                 >
-                  Partner
+                  Invite code
                 </button>
               )}
             </div>
@@ -292,7 +296,7 @@ export default function App() {
           collections={collections}
           onOpen={setSelectedId}
           onCreate={() => openForm('idea')}
-          onReorder={(activeId, overId) => app.reorderCollections('idea', activeId, overId)}
+          onReorder={(activeId, toIndex) => app.reorderCollections('idea', activeId, toIndex)}
         />
       )}
 

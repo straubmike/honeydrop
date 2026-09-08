@@ -290,6 +290,43 @@ export function seedState(): AppState {
         ],
         collections: [birthday, trip, anniversary, picnic, gifts, nest],
       },
+      {
+        id: uid(),
+        title: 'Cabin plans',
+        createdAt: ago(60 * 24 * 5),
+        updatedAt: ago(30),
+        inviteCode: seedInviteCode(),
+        members: [
+          { userId, name: 'You' },
+          { userId: partnerId, name: 'Alex' },
+        ],
+        collections: [
+          {
+            id: uid(),
+            kind: 'idea',
+            title: 'Packing notes',
+            description: 'What we still need before the weekend.',
+            createdAt: ago(60 * 24 * 4),
+            updatedAt: ago(60),
+            items: [
+              item({
+                type: 'text',
+                author: 'Alex',
+                createdAt: ago(60),
+                content: 'Extra blankets. The cabin heater is theatrical at best.',
+                x: 48,
+                y: 52,
+                z: 1,
+              }),
+            ],
+          },
+        ],
+        // Partner initiated delete — you see Confirm / Cancel Deletion.
+        pendingDeletion: {
+          requestedBy: partnerId,
+          requestedAt: ago(30),
+        },
+      },
     ],
   }
 }

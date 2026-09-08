@@ -21,6 +21,8 @@ interface ItemCardProps {
   currentName: string
   dragging: boolean
   pin: { x: number; y: number; z: number }
+  layout?: 'freeform' | 'flow'
+  floating?: boolean
   onReact: (emoji: string) => void
   onReply: (text: string) => void
   onDelete: () => void
@@ -124,6 +126,8 @@ export function ItemCard({
   currentName,
   dragging,
   pin,
+  layout = 'freeform',
+  floating = false,
   onReact,
   onReply,
   onDelete,
@@ -164,7 +168,7 @@ export function ItemCard({
       }
     })()
   }
-  const mine = item.author === currentName
+  const mine = item.author.trim() === currentName.trim()
   const media = itemMediaAttachments(item)
   const extraLinks = itemLinkAttachments(item)
   const previewCandidates = item.previewCandidates ?? []
@@ -292,11 +296,24 @@ export function ItemCard({
 
   return (
     <article
-      className={['item', dragging ? 'item--dragging' : ''].filter(Boolean).join(' ')}
+      className={[
+        'item',
+        layout === 'flow' ? 'item--flow' : '',
+        floating ? 'item--floating' : '',
+        dragging ? 'item--dragging' : '',
+      ]
+        .filter(Boolean)
+        .join(' ')}
       data-item-id={item.id}
-      style={{ left: pin.x, top: pin.y, zIndex: dragging ? 10000 : pin.z }}
+      style={
+        layout === 'freeform'
+          ? { left: pin.x, top: pin.y, zIndex: dragging ? 10000 : pin.z }
+          : floating
+            ? { zIndex: 10000 }
+            : undefined
+      }
       onPointerDown={(event) => {
-        if (event.button !== 0 || dragging) return
+        if (event.button !== 0 || dragging || layout === 'flow') return
         if (isCardBackgroundClick(event.target, event.currentTarget)) onBringToFront()
       }}
     >
@@ -304,7 +321,7 @@ export function ItemCard({
         <button
           type="button"
           className="item__grip"
-          aria-label="Drag anywhere on the board"
+          aria-label={layout === 'flow' ? 'Long-press to reorder' : 'Drag anywhere on the board'}
           onPointerDown={onDragHandlePointerDown}
         >
           <span aria-hidden="true" />
@@ -313,7 +330,14 @@ export function ItemCard({
         <strong>{item.author}</strong>
         <span>{relativeTime(item.createdAt)}</span>
         {mine ? (
-          <button type="button" className="text-btn" onClick={onDelete}>
+          <button
+            type="button"
+            className="text-btn item__remove"
+            onClick={(event) => {
+              event.stopPropagation()
+              onDelete()
+            }}
+          >
             Remove
           </button>
         ) : null}
