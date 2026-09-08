@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { fetchLinkImageBlob } from '../linkPreview'
 import type { Attachment } from '../types'
 import { useMediaSrc } from './Media'
 
@@ -13,11 +14,10 @@ function useRemoteImageSrc(url: string): string | null | undefined {
   useEffect(() => {
     let cancelled = false
     let objectUrl: string | undefined
-    void fetch(`/api/link-image?url=${encodeURIComponent(url)}`)
-      .then((response) => (response.ok ? response.blob() : null))
+    void fetchLinkImageBlob(url)
       .then((blob) => {
         if (cancelled) return
-        if (!blob || blob.size < 80) {
+        if (!blob) {
           setSrc(null)
           return
         }

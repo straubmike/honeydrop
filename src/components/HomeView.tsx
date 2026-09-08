@@ -46,6 +46,7 @@ export function HomeView({
   const [creating, setCreating] = useState(false)
   const [joining, setJoining] = useState(false)
   const [pendingDelete, setPendingDelete] = useState<IdeaBoard | null>(null)
+  const [aboutOpen, setAboutOpen] = useState(false)
   const [title, setTitle] = useState('')
   const [code, setCode] = useState('')
   const [joinError, setJoinError] = useState('')
@@ -53,6 +54,7 @@ export function HomeView({
   const createHeadingId = useId()
   const joinHeadingId = useId()
   const deleteHeadingId = useId()
+  const aboutPanelId = useId()
 
   const submitCreate = (event: FormEvent) => {
     event.preventDefault()
@@ -208,6 +210,30 @@ export function HomeView({
           </button>
         </div>
       </section>
+
+      <div className="home-about">
+        <button
+          type="button"
+          className="text-btn home-about__toggle"
+          aria-expanded={aboutOpen}
+          aria-controls={aboutPanelId}
+          onClick={() => setAboutOpen((open) => !open)}
+        >
+          About
+        </button>
+        {aboutOpen ? (
+          <div className="home-about__body" id={aboutPanelId}>
+            <p>
+              Honey Drop is an app for couples. Think of it like a digital pin board you share with
+              one another. Plan events, share ideas.
+            </p>
+            <p>
+              The app is in its infancy. There may be bugs, features may change. If you have been
+              asked to test Honey Drop, please reach out to Mike with feedback!
+            </p>
+          </div>
+        ) : null}
+      </div>
 
       {creating ? (
         <div className="modal-backdrop" onClick={() => setCreating(false)} role="presentation">

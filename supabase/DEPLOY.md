@@ -4,7 +4,15 @@
 2. Enable **Anonymous** auth (Authentication → Providers).
 3. Run `supabase/migrations/001_init.sql` in the SQL editor.
 4. Run `supabase/migrations/002_device_links.sql` (phone ↔ desktop “Use another device” codes).
-5. Deploy the edge function: `supabase functions deploy link-api`
+5. Deploy the edge function (needed for link previews on honeydrop.app):
+
+```bash
+npx supabase login
+npm run deploy:link-api
+```
+
+Then push app code so the VPS rebuilds (or wait for the minute cron after push).
+
 6. On the VPS build host, set:
    - `VITE_SUPABASE_URL`
    - `VITE_SUPABASE_ANON_KEY`

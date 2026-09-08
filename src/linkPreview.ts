@@ -1,5 +1,5 @@
 import { classifyMedia, isDirectMediaUrl, mediaKindFromMime, mediaKindFromUrl } from './images'
-import { getSupabaseAnonKey, getSupabaseUrl, isSupabaseConfigured } from './lib/supabase'
+import { getSupabase, getSupabaseAnonKey, getSupabaseUrl, isSupabaseConfigured } from './lib/supabase'
 import type { MediaKind } from './types'
 
 export interface LinkPreview {
@@ -21,16 +21,34 @@ function linkApiUrl(op: 'link-preview' | 'link-image' | 'link-media', target: st
   return `${getSupabaseUrl()}/functions/v1/link-api?op=${op}&url=${encodeURIComponent(target)}`
 }
 
-function linkApiHeaders(): HeadersInit | undefined {
+async function linkApiHeaders(): Promise<HeadersInit | undefined> {
   if (import.meta.env.DEV || !isSupabaseConfigured) return undefined
-  return {
-    Authorization: `Bearer ${getSupabaseAnonKey()}`,
+  const key = getSupabaseAnonKey()
+  const headers: Record<string, string> = { apikey: key }
+  try {
+    const { data } = await getSupabase().auth.getSession()
+    headers.Authorization = `Bearer ${data.session?.access_token || key}`
+  } catch {
+    headers.Authorization = `Bearer ${key}`
+  }
+  return headers
+}
+
+export async function fetchLinkImageBlob(url: string): Promise<Blob | null> {
+  try {
+    const response = await fetch(linkApiUrl('link-image', url), { headers: await linkApiHeaders() })
+    if (!response.ok) return null
+    const blob = await response.blob()
+    if (blob.size < 80) return null
+    return blob
+  } catch {
+    return null
   }
 }
 
 export async function fetchRemoteMediaFile(url: string): Promise<File | null> {
   try {
-    const response = await fetch(linkApiUrl('link-media', url), { headers: linkApiHeaders() })
+    const response = await fetch(linkApiUrl('link-media', url), { headers: await linkApiHeaders() })
     if (!response.ok) return null
     const blob = await response.blob()
     if (blob.size < 80) return null
@@ -61,9 +79,10 @@ export function previewFetchUrls(pageUrl: string, candidates: string[], startInd
 
 export async function fetchPreviewFiles(imageUrls: string[]): Promise<File[]> {
   const files: File[] = []
+  const headers = await linkApiHeaders()
   for (const imageUrl of imageUrls) {
     try {
-      const image = await fetch(linkApiUrl('link-image', imageUrl), { headers: linkApiHeaders() })
+      const image = await fetch(linkApiUrl('link-image', imageUrl), { headers })
       if (!image.ok) continue
       const blob = await image.blob()
       if (blob.size < 80) continue
@@ -77,21 +96,28 @@ export async function fetchPreviewFiles(imageUrls: string[]): Promise<File[]> {
 }
 
 export async function fetchLinkPreview(pageUrl: string): Promise<LinkPreview> {
-  if (isDirectMediaUrl(pageUrl)) {
-    const file = await fetchRemoteMediaFile(pageUrl)
-    if (file) return { candidates: [pageUrl], files: [file] }
+  try {
+    if (isDirectMediaUrl(pageUrl)) {
+      const file = await fetchRemoteMediaFile(pageUrl)
+      if (file) return { candidates: [pageUrl], files: [file] }
+      return { candidates: [], files: [] }
+    }
+
+    const response = await fetch(linkApiUrl('link-preview', pageUrl), {
+      headers: await linkApiHeaders(),
+    })
+    if (!response.ok) return { candidates: [], files: [] }
+    const data = (await response.json()) as {
+      title?: string
+      description?: string
+      images?: string[]
+      candidates?: string[]
+    }
+    const candidates = data.candidates?.length ? data.candidates : (data.images ?? [])
+    const files = await fetchPreviewFiles(previewFetchUrls(pageUrl, candidates, 0))
+    return { title: data.title, description: data.description, candidates, files }
+  } catch {
+    // Preview proxy may be unavailable in production until link-api is deployed.
     return { candidates: [], files: [] }
   }
-
-  const response = await fetch(linkApiUrl('link-preview', pageUrl), { headers: linkApiHeaders() })
-  if (!response.ok) return { candidates: [], files: [] }
-  const data = (await response.json()) as {
-    title?: string
-    description?: string
-    images?: string[]
-    candidates?: string[]
-  }
-  const candidates = data.candidates?.length ? data.candidates : (data.images ?? [])
-  const files = await fetchPreviewFiles(previewFetchUrls(pageUrl, candidates, 0))
-  return { title: data.title, description: data.description, candidates, files }
 }

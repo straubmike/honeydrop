@@ -99,7 +99,12 @@ export function Composer({ onAdd, onDraw }: ComposerProps) {
         })
         setText('')
       } catch {
-        window.alert('Could not add that link.')
+        try {
+          await onAdd({ type: 'link', content: entryUrl })
+          setText('')
+        } catch {
+          window.alert('Could not add that link.')
+        }
       } finally {
         setBusy(false)
       }
@@ -172,7 +177,16 @@ export function Composer({ onAdd, onDraw }: ComposerProps) {
       })
       resetExtras()
     } catch {
-      window.alert('Could not add that link.')
+      try {
+        await onAdd({
+          type: 'link',
+          content,
+          caption: caption.trim() || undefined,
+        })
+        resetExtras()
+      } catch {
+        window.alert('Could not add that link.')
+      }
     } finally {
       setBusy(false)
     }
