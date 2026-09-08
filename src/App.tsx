@@ -3,6 +3,7 @@ import { BrandMark, LocationPin } from './components/BrandMark'
 import { CalendarView } from './components/CalendarView'
 import { CollectionDetail } from './components/CollectionDetail'
 import { CollectionForm } from './components/CollectionForm'
+import { DeviceLinkIcon, DeviceLinkModal } from './components/DeviceLinkModal'
 import { HomeView } from './components/HomeView'
 import { IdeasView } from './components/IdeasView'
 import { InviteModal } from './components/InviteModal'
@@ -90,6 +91,7 @@ export default function App() {
   const [formKind, setFormKind] = useState<CollectionKind | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [inviteOpen, setInviteOpen] = useState(false)
+  const [deviceLinkOpen, setDeviceLinkOpen] = useState(false)
   const [cursor, setCursor] = useState(() => {
     const now = new Date()
     return new Date(now.getFullYear(), now.getMonth(), 1)
@@ -171,21 +173,33 @@ export default function App() {
     )
   }
 
+  const deviceLinkModal = deviceLinkOpen ? (
+    <DeviceLinkModal
+      onClose={() => setDeviceLinkOpen(false)}
+      onCreateCode={app.createDeviceLink}
+      onClaimCode={app.claimDeviceLink}
+    />
+  ) : null
+
   if (!board) {
     return (
-      <HomeView
-        boards={app.boards}
-        userId={app.userId}
-        displayName={app.displayName}
-        onDisplayName={app.setDisplayName}
-        onOpen={app.openBoard}
-        onCreate={(title) => void app.createBoard(title)}
-        onJoin={app.joinBoard}
-        onRequestDelete={app.requestBoardDeletion}
-        onCancelDelete={app.cancelBoardDeletion}
-        onConfirmDelete={app.confirmBoardDeletion}
-        busy={app.busy}
-      />
+      <>
+        <HomeView
+          boards={app.boards}
+          userId={app.userId}
+          displayName={app.displayName}
+          onDisplayName={app.setDisplayName}
+          onOpen={app.openBoard}
+          onCreate={(title) => void app.createBoard(title)}
+          onJoin={app.joinBoard}
+          onRequestDelete={app.requestBoardDeletion}
+          onCancelDelete={app.cancelBoardDeletion}
+          onConfirmDelete={app.confirmBoardDeletion}
+          busy={app.busy}
+          onOpenDeviceLink={() => setDeviceLinkOpen(true)}
+        />
+        {deviceLinkModal}
+      </>
     )
   }
 
@@ -256,6 +270,15 @@ export default function App() {
         <div className="who-row">
           <button type="button" className="back-btn" onClick={app.closeBoard} aria-label="Back to all boards">
             ←
+          </button>
+          <button
+            type="button"
+            className="back-btn"
+            onClick={() => setDeviceLinkOpen(true)}
+            aria-label="Use another device"
+            title="Use another device"
+          >
+            <DeviceLinkIcon />
           </button>
           <div className="who">
             <span>You</span>
@@ -369,6 +392,7 @@ export default function App() {
           onClose={() => setInviteOpen(false)}
         />
       ) : null}
+      {deviceLinkModal}
     </div>
   )
 }

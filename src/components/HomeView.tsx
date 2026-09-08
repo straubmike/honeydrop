@@ -1,6 +1,7 @@
 import { useId, useState, type FormEvent } from 'react'
 import type { IdeaBoard } from '../types'
 import { BrandMark } from './BrandMark'
+import { DeviceLinkIcon } from './DeviceLinkModal'
 
 interface HomeViewProps {
   boards: IdeaBoard[]
@@ -19,6 +20,7 @@ interface HomeViewProps {
   onRequestDelete: (boardId: string) => void
   onCancelDelete: (boardId: string) => void
   onConfirmDelete: (boardId: string) => void
+  onOpenDeviceLink: () => void
 }
 
 function boardBlurb(board: IdeaBoard): string {
@@ -39,6 +41,7 @@ export function HomeView({
   onRequestDelete,
   onCancelDelete,
   onConfirmDelete,
+  onOpenDeviceLink,
 }: HomeViewProps) {
   const [creating, setCreating] = useState(false)
   const [joining, setJoining] = useState(false)
@@ -92,16 +95,27 @@ export function HomeView({
             <p className="brand__sub">Your shared idea boards</p>
           </div>
         </div>
-        <label className="who">
-          <span>Your name</span>
-          <input
-            value={displayName}
-            onChange={(event) => onDisplayName(event.target.value)}
-            maxLength={32}
-            placeholder="You"
-            aria-label="Your name"
-          />
-        </label>
+        <div className="who-row who-row--home">
+          <button
+            type="button"
+            className="back-btn"
+            onClick={onOpenDeviceLink}
+            aria-label="Use another device"
+            title="Use another device"
+          >
+            <DeviceLinkIcon />
+          </button>
+          <label className="who">
+            <span>Your name</span>
+            <input
+              value={displayName}
+              onChange={(event) => onDisplayName(event.target.value)}
+              maxLength={32}
+              placeholder="You"
+              aria-label="Your name"
+            />
+          </label>
+        </div>
       </header>
 
       <section className="home">

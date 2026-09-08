@@ -12,6 +12,7 @@ import {
   subscribeToBoards,
   updateProfileName,
 } from './api/boards'
+import { claimDeviceLinkCode, createDeviceLinkCode } from './api/deviceLink'
 import { deleteBoardMediaFolder, uploadBoardMedia } from './api/media'
 import { clearItemMedia, isMediaItem, itemAttachments, itemMediaAttachments, clearCoverIfStale } from './attachments'
 import { uid } from './dates'
@@ -909,6 +910,22 @@ export function useApp() {
     [activeBoardId, markBoardDirty],
   )
 
+  const createDeviceLink = useCallback(async () => createDeviceLinkCode(), [])
+
+  const claimDeviceLink = useCallback(async (code: string) => {
+    const result = await claimDeviceLinkCode(code)
+    if (!result.ok) return result
+    const profile = await loadProfile(stateRef.current.userId)
+    const boards = await fetchMyBoards()
+    skipPersistRef.current = true
+    setState((prev) => ({
+      ...prev,
+      displayName: profile.displayName,
+      boards,
+    }))
+    return { ok: true as const }
+  }, [])
+
   return {
     ready,
     bootError,
@@ -946,6 +963,8 @@ export function useApp() {
     updateCaption,
     updateContent,
     cycleLinkPreview,
+    createDeviceLink,
+    claimDeviceLink,
   }
 }
 
