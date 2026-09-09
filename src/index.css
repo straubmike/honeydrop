@@ -15,6 +15,11 @@
   --serif: 'Fraunces', 'Iowan Old Style', Georgia, serif;
   --sans: 'Figtree', 'Segoe UI', sans-serif;
   --radius: 14px;
+  /* Stacking: page chrome < drag floats < dialogs/draw < media lightbox */
+  --z-composer: 5000;
+  --z-float: 12000;
+  --z-overlay: 20000;
+  --z-lightbox: 30000;
   color: var(--ink);
   font: 16px/1.5 var(--sans);
   background: var(--paper);
@@ -791,7 +796,7 @@ img {
   position: fixed;
   left: 0;
   top: 0;
-  z-index: 12000;
+  z-index: var(--z-float);
   pointer-events: none;
   will-change: transform;
 }
@@ -961,7 +966,7 @@ img {
   position: fixed;
   left: 0;
   top: 0;
-  z-index: 12000;
+  z-index: var(--z-float);
   pointer-events: none;
   will-change: transform;
 }
@@ -1080,7 +1085,7 @@ body.is-dragging .ideas--compact {
 .media-lightbox {
   position: fixed;
   inset: 0;
-  z-index: 30000;
+  z-index: var(--z-lightbox);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1596,7 +1601,7 @@ body.is-dragging .ideas--compact {
 
 .composer {
   position: relative;
-  z-index: 5000;
+  z-index: var(--z-composer);
   flex: none;
 }
 
@@ -1682,7 +1687,7 @@ body.is-dragging .ideas--compact {
   display: grid;
   place-items: center;
   padding: 1rem;
-  z-index: 20;
+  z-index: var(--z-overlay);
 }
 
 .modal {
@@ -1866,6 +1871,28 @@ body.is-dragging .ideas--compact {
   background: var(--paper);
 }
 
+.board-map__distance {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-align: center;
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--muted) 45%, transparent);
+  text-underline-offset: 0.18em;
+}
+
+.board-map__distance:hover,
+.board-map__distance:focus-visible {
+  color: var(--ink);
+  text-decoration-color: currentColor;
+}
+
 .location-picker .board-map__find {
   flex-wrap: nowrap;
   width: 100%;
@@ -1928,7 +1955,8 @@ body.is-dragging .ideas--compact {
   border-radius: 12px;
   overflow: hidden;
   background: var(--paper);
-  aspect-ratio: 4 / 3;
+  /* Match DRAW_ASPECT (2/3) so previews don’t squash the phone canvas */
+  aspect-ratio: 2 / 3;
 }
 
 .item__drawing {
@@ -1944,7 +1972,7 @@ body.draw-open {
 .draw-overlay {
   position: fixed;
   inset: 0;
-  z-index: 6000;
+  z-index: var(--z-overlay);
   background: rgba(34, 25, 16, 0.38);
   display: grid;
   place-items: center;

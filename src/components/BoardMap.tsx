@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
-import { readDeviceLocation, reversePlace, searchPlaces } from '../geo'
+import { distanceMiles, formatDistanceApart, readDeviceLocation, reversePlace, searchPlaces, type DistanceUnit } from '../geo'
 import type { BoardMember, Collection, GeoPoint } from '../types'
 import { LocateMeButton, LocationHelpButton } from './LocationControls'
 import { flyToPoint, useMapPins, useOsmMap, type MapPin } from './OsmMap'
@@ -28,8 +28,21 @@ export function BoardMap({
   const [hits, setHits] = useState<GeoPoint[]>([])
   const [candidate, setCandidate] = useState<GeoPoint | null>(null)
   const [busy, setBusy] = useState(false)
+  const [distanceUnit, setDistanceUnit] = useState<DistanceUnit>('mi')
   const me = members.find((member) => member.userId === userId)
+  const partner = members.find((member) => member.userId !== userId)
   const mine = me?.location
+  const theirs = partner?.location
+
+  const apartMiles = useMemo(() => {
+    if (!mine || !theirs) return null
+    if (!Number.isFinite(mine.lat) || !Number.isFinite(mine.lng)) return null
+    if (!Number.isFinite(theirs.lat) || !Number.isFinite(theirs.lng)) return null
+    return distanceMiles(mine, theirs)
+  }, [mine, theirs])
+
+  const apartLabel =
+    apartMiles == null ? null : formatDistanceApart(apartMiles, distanceUnit) || null
 
   const pins = useMemo<MapPin[]>(() => {
     const memberPins: MapPin[] = members
@@ -178,6 +191,17 @@ export function BoardMap({
       ) : null}
 
       <div className="board-map__canvas" ref={containerRef} />
+
+      {apartLabel ? (
+        <button
+          type="button"
+          className="board-map__distance"
+          onClick={() => setDistanceUnit((unit) => (unit === 'mi' ? 'km' : 'mi'))}
+          aria-label={`Distance apart. Showing ${distanceUnit === 'mi' ? 'miles' : 'kilometers'}. Tap to switch units.`}
+        >
+          {apartLabel}
+        </button>
+      ) : null}
     </section>
   )
 }

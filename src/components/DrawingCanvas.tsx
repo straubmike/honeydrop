@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import { createPortal } from 'react-dom'
 import { useCompactViewport } from '../useCompactViewport'
 import {
+  DRAW_ASPECT,
   DRAW_COLORS,
   STROKE_WIDTH,
   type DrawingData,
@@ -57,20 +59,47 @@ function paint(canvas: HTMLCanvasElement, background: string, strokes: DrawingSt
 }
 
 export function DrawingPreview({ data }: { data: DrawingData }) {
+  // Match the phone drawing stage (portrait). Normalized strokes were captured on that
+  // aspect, so a matching viewBox keeps circles round and short marks (dot eyes) visible.
+  const vbW = 100
+  const vbH = vbW / DRAW_ASPECT
+  const strokeScale = Math.min(vbW, vbH)
+
   return (
-    <svg className="item__drawing" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
-      <rect width="100" height="100" fill={data.background} />
-      {data.strokes.map((stroke, index) => (
-        <polyline
-          key={index}
-          points={stroke.points.map((point) => `${point.x * 100},${point.y * 100}`).join(' ')}
-          fill="none"
-          stroke={stroke.color}
-          strokeWidth={stroke.width * 100}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      ))}
+    <svg
+      className="item__drawing"
+      viewBox={`0 0 ${vbW} ${vbH}`}
+      preserveAspectRatio="xMidYMid meet"
+      aria-hidden="true"
+    >
+      <rect width={vbW} height={vbH} fill={data.background} />
+      {data.strokes.map((stroke, index) => {
+        if (!stroke.points.length) return null
+        const width = stroke.width * strokeScale
+        if (stroke.points.length === 1) {
+          const point = stroke.points[0]
+          return (
+            <circle
+              key={index}
+              cx={point.x * vbW}
+              cy={point.y * vbH}
+              r={width / 2}
+              fill={stroke.color}
+            />
+          )
+        }
+        return (
+          <polyline
+            key={index}
+            points={stroke.points.map((point) => `${point.x * vbW},${point.y * vbH}`).join(' ')}
+            fill="none"
+            stroke={stroke.color}
+            strokeWidth={width}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        )
+      })}
     </svg>
   )
 }
@@ -167,7 +196,7 @@ export function DrawingCanvas({ initial, onClose, onSave }: DrawingCanvasProps) 
     onSave({ background, strokes })
   }
 
-  return (
+  return createPortal(
     <div className={compact ? 'draw-overlay draw-overlay--full' : 'draw-overlay'} role="presentation">
       <div className="draw-phone" role="dialog" aria-label="Drawing">
         <div className="draw-phone__bar">
@@ -228,6 +257,7 @@ export function DrawingCanvas({ initial, onClose, onSave }: DrawingCanvasProps) 
           ))}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }

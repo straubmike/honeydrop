@@ -2,6 +2,7 @@ import { useEffect, useId, useState, type FormEvent } from 'react'
 import { uid } from '../dates'
 import type { Collection, CollectionKind, GeoPoint, Recurrence, Schedule } from '../types'
 import { LocationPicker } from './LocationPicker'
+import { ModalBackdrop } from './ModalBackdrop'
 
 interface CollectionFormProps {
   kind: CollectionKind
@@ -67,7 +68,7 @@ export function CollectionForm({ kind, initial, defaultDate, onClose, onSave }: 
   }
 
   return (
-    <div className="modal-backdrop" onClick={onClose} role="presentation">
+    <ModalBackdrop onClose={onClose}>
       <form
         className="modal"
         role="dialog"
@@ -172,6 +173,6 @@ export function CollectionForm({ kind, initial, defaultDate, onClose, onSave }: 
           </button>
         </footer>
       </form>
-    </div>
+    </ModalBackdrop>
   )
 }

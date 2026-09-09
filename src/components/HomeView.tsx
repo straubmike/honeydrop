@@ -2,6 +2,7 @@ import { useId, useState, type FormEvent } from 'react'
 import type { IdeaBoard } from '../types'
 import { BrandMark } from './BrandMark'
 import { DeviceLinkIcon } from './DeviceLinkModal'
+import { ModalBackdrop } from './ModalBackdrop'
 
 interface HomeViewProps {
   boards: IdeaBoard[]
@@ -236,7 +237,7 @@ export function HomeView({
       </div>
 
       {creating ? (
-        <div className="modal-backdrop" onClick={() => setCreating(false)} role="presentation">
+        <ModalBackdrop onClose={() => setCreating(false)}>
           <form
             className="modal"
             role="dialog"
@@ -267,11 +268,11 @@ export function HomeView({
               </button>
             </div>
           </form>
-        </div>
+        </ModalBackdrop>
       ) : null}
 
       {joining ? (
-        <div className="modal-backdrop" onClick={() => setJoining(false)} role="presentation">
+        <ModalBackdrop onClose={() => setJoining(false)}>
           <form
             className="modal"
             role="dialog"
@@ -311,11 +312,11 @@ export function HomeView({
               </button>
             </div>
           </form>
-        </div>
+        </ModalBackdrop>
       ) : null}
 
       {pendingDelete ? (
-        <div className="modal-backdrop" onClick={() => setPendingDelete(null)} role="presentation">
+        <ModalBackdrop onClose={() => setPendingDelete(null)}>
           <div
             className="modal"
             role="dialog"
@@ -340,7 +341,7 @@ export function HomeView({
               </button>
             </div>
           </div>
-        </div>
+        </ModalBackdrop>
       ) : null}
     </div>
   )

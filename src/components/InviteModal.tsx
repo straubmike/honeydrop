@@ -1,4 +1,5 @@
 import { useId, useState } from 'react'
+import { ModalBackdrop } from './ModalBackdrop'
 
 interface InviteModalProps {
   boardTitle: string
@@ -29,7 +30,7 @@ export function InviteModal({
   }
 
   return (
-    <div className="modal-backdrop" onClick={onClose} role="presentation">
+    <ModalBackdrop onClose={onClose}>
       <div
         className="modal"
         role="dialog"
@@ -67,6 +68,6 @@ export function InviteModal({
           </button>
         </div>
       </div>
-    </div>
+    </ModalBackdrop>
   )
 }

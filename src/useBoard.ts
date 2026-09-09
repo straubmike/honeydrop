@@ -21,6 +21,7 @@ import { isSupabaseConfigured } from './lib/supabase'
 import { fetchPreviewFiles, previewPairUrls } from './linkPreview'
 import { isStoredMedia, removeStoredMedia } from './mediaStore'
 import { nextPin, resolvePin } from './pins'
+import { withDevSampleLocations } from './seed'
 import type {
   AppState,
   Attachment,
@@ -156,7 +157,11 @@ export function useApp() {
         const boards = await fetchMyBoards()
         if (cancelled) return
         skipPersistRef.current = true
-        setState({ userId, displayName: profile.displayName, boards })
+        setState({
+          userId,
+          displayName: profile.displayName,
+          boards: import.meta.env.DEV ? withDevSampleLocations(boards, userId) : boards,
+        })
         setBootError(null)
       } catch (error) {
         if (cancelled) return
@@ -194,13 +199,22 @@ export function useApp() {
             }
             const exists = prev.boards.some((board) => board.id === boardId)
             if (!exists) {
-              return { ...prev, boards: [remote, ...prev.boards] }
+              const next = import.meta.env.DEV
+                ? withDevSampleLocations([remote], prev.userId)[0]!
+                : remote
+              return { ...prev, boards: [next, ...prev.boards] }
             }
             const local = prev.boards.find((board) => board.id === boardId)
             if (local && local.updatedAt > remote.updatedAt) return prev
             return {
               ...prev,
-              boards: prev.boards.map((board) => (board.id === boardId ? remote : board)),
+              boards: prev.boards.map((board) =>
+                board.id === boardId
+                  ? import.meta.env.DEV
+                    ? withDevSampleLocations([remote], prev.userId)[0]!
+                    : remote
+                  : board,
+              ),
             }
           })
           if (!remote) {

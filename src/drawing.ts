@@ -1,5 +1,7 @@
 export const DRAW_COLORS = ['#c0562a', '#c9923a', '#355c48', '#221910', '#f0d5c4', '#fffaf2'] as const
 export const STROKE_WIDTH = 0.018
+/** Width / height of the drawing stage; previews should match this so strokes stay round. */
+export const DRAW_ASPECT = 2 / 3
 
 export interface DrawingPoint {
   x: number

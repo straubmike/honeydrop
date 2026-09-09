@@ -13,6 +13,7 @@ import { useCompactViewport } from '../useCompactViewport'
 import { Composer } from './Composer'
 import { DrawingCanvas } from './DrawingCanvas'
 import { ItemCard } from './ItemCard'
+import { ModalBackdrop } from './ModalBackdrop'
 
 interface CollectionDetailProps {
   collection: Collection
@@ -562,7 +563,7 @@ export function CollectionDetail({
       ) : null}
 
       {confirmDelete ? (
-        <div className="modal-backdrop" onClick={() => setConfirmDelete(false)} role="presentation">
+        <ModalBackdrop onClose={() => setConfirmDelete(false)}>
           <div
             className="modal"
             role="dialog"
@@ -595,7 +596,7 @@ export function CollectionDetail({
               </button>
             </div>
           </div>
-        </div>
+        </ModalBackdrop>
       ) : null}
     </section>
   )

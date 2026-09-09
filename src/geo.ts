@@ -6,6 +6,40 @@ interface NominatimHit {
   display_name: string
 }
 
+const EARTH_RADIUS_MILES = 3958.7613
+const MILES_TO_KM = 1.609344
+
+export type DistanceUnit = 'mi' | 'km'
+
+/** Great-circle distance in miles between two points (WGS84). */
+export function distanceMiles(a: GeoPoint, b: GeoPoint): number {
+  const toRad = (deg: number) => (deg * Math.PI) / 180
+  const dLat = toRad(b.lat - a.lat)
+  const dLng = toRad(b.lng - a.lng)
+  const lat1 = toRad(a.lat)
+  const lat2 = toRad(b.lat)
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2
+  return 2 * EARTH_RADIUS_MILES * Math.asin(Math.min(1, Math.sqrt(h)))
+}
+
+function formatDistanceValue(value: number, unitWord: string): string {
+  if (value < 0.1) return `Less than 0.1 ${unitWord} apart`
+  if (value < 10) return `About ${value.toFixed(1)} ${unitWord} apart`
+  if (value < 100) return `About ${Math.round(value)} ${unitWord} apart`
+  return `About ${Math.round(value / 10) * 10} ${unitWord} apart`
+}
+
+/** Short human label for map UI, e.g. "About 12 miles apart". */
+export function formatDistanceApart(miles: number, unit: DistanceUnit = 'mi'): string {
+  if (!Number.isFinite(miles) || miles < 0) return ''
+  if (unit === 'km') {
+    return formatDistanceValue(miles * MILES_TO_KM, 'kilometers')
+  }
+  return formatDistanceValue(miles, 'miles')
+}
+
 export async function searchPlaces(query: string): Promise<GeoPoint[]> {
   const q = query.trim()
   if (!q) return []

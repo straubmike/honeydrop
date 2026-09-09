@@ -1,4 +1,5 @@
 import { useEffect, useId, useState, type FormEvent } from 'react'
+import { ModalBackdrop } from './ModalBackdrop'
 
 interface DeviceLinkModalProps {
   onClose: () => void
@@ -65,7 +66,7 @@ export function DeviceLinkModal({ onClose, onCreateCode, onClaimCode }: DeviceLi
   }
 
   return (
-    <div className="modal-backdrop" onClick={onClose} role="presentation">
+    <ModalBackdrop onClose={onClose}>
       <div
         className="modal"
         role="dialog"
@@ -166,7 +167,7 @@ export function DeviceLinkModal({ onClose, onCreateCode, onClaimCode }: DeviceLi
           </form>
         )}
       </div>
-    </div>
+    </ModalBackdrop>
   )
 }
 
