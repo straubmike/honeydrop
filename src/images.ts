@@ -46,6 +46,7 @@ export function mediaKindLabel(type: ItemType): string {
   if (type === 'audio') return 'audio'
   if (type === 'image') return 'photo'
   if (type === 'drawing') return 'drawing'
+  if (type === 'list') return 'list'
   return type
 }
 

@@ -439,7 +439,7 @@ export function useApp() {
         ? await filesToAttachments(activeBoardId, input.files, input.fileSource ?? 'upload')
         : []
       const type =
-        input.type === 'link' || input.type === 'text' || input.type === 'drawing'
+        input.type === 'link' || input.type === 'text' || input.type === 'drawing' || input.type === 'list'
           ? input.type
           : (attachments[0]?.type ?? input.type)
       const collection = activeBoard?.collections.find((entry) => entry.id === collectionId)

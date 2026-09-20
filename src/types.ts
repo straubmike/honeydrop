@@ -1,7 +1,7 @@
 export type Tab = 'calendar' | 'ideas'
 export type CollectionKind = 'calendar' | 'idea'
 export type MediaKind = 'image' | 'video' | 'audio'
-export type ItemType = MediaKind | 'link' | 'text' | 'drawing'
+export type ItemType = MediaKind | 'link' | 'text' | 'drawing' | 'list'
 export type Recurrence = 'none' | 'yearly' | 'monthly'
 
 export interface Reaction {

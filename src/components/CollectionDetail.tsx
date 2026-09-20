@@ -7,12 +7,14 @@ import {
   toISODate,
 } from '../dates'
 import { parseDrawing, stringifyDrawing, type DrawingData } from '../drawing'
+import { parseList, stringifyList, type ListData } from '../list'
 import { boardExtent, resolvePin } from '../pins'
 import type { Collection, CollectionCoverPreview, NewItemInput } from '../types'
 import { useCompactViewport } from '../useCompactViewport'
 import { Composer } from './Composer'
 import { DrawingCanvas } from './DrawingCanvas'
 import { ItemCard } from './ItemCard'
+import { ListEditor } from './ListEditor'
 import { ModalBackdrop } from './ModalBackdrop'
 
 interface CollectionDetailProps {
@@ -145,6 +147,7 @@ export function CollectionDetail({
   const [drag, setDrag] = useState<FreeformDragState | null>(null)
   const [compactDrag, setCompactDrag] = useState<CompactDragState | null>(null)
   const [drawing, setDrawing] = useState<{ mode: 'new' } | { mode: 'edit'; itemId: string } | null>(null)
+  const [listEdit, setListEdit] = useState<{ mode: 'new' } | { mode: 'edit'; itemId: string } | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const deleteHeadingId = useId()
 
@@ -445,6 +448,7 @@ export function CollectionDetail({
       onEditDrawing={
         item.type === 'drawing' ? () => setDrawing({ mode: 'edit', itemId: item.id }) : undefined
       }
+      onEditList={item.type === 'list' ? () => setListEdit({ mode: 'edit', itemId: item.id }) : undefined}
     />
   )
 
@@ -540,7 +544,11 @@ export function CollectionDetail({
         </div>
       ) : null}
 
-      <Composer onAdd={(input) => onAddItem(input, boardSize.w)} onDraw={() => setDrawing({ mode: 'new' })} />
+      <Composer
+        onAdd={(input) => onAddItem(input, boardSize.w)}
+        onDraw={() => setDrawing({ mode: 'new' })}
+        onList={() => setListEdit({ mode: 'new' })}
+      />
 
       {drawing ? (
         <DrawingCanvas
@@ -558,6 +566,27 @@ export function CollectionDetail({
               onContent(drawing.itemId, content)
             }
             setDrawing(null)
+          }}
+        />
+      ) : null}
+
+      {listEdit ? (
+        <ListEditor
+          title={listEdit.mode === 'new' ? 'New list' : 'Edit list'}
+          initial={
+            listEdit.mode === 'edit'
+              ? parseList(collection.items.find((item) => item.id === listEdit.itemId)?.content ?? '')
+              : null
+          }
+          onClose={() => setListEdit(null)}
+          onSave={(data: ListData) => {
+            const content = stringifyList(data)
+            if (listEdit.mode === 'new') {
+              void onAddItem({ type: 'list', content }, boardSize.w)
+            } else {
+              onContent(listEdit.itemId, content)
+            }
+            setListEdit(null)
           }}
         />
       ) : null}

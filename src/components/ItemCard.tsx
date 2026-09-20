@@ -11,8 +11,10 @@ import {
 import { fetchRemoteMediaFile } from '../linkPreview'
 import type { CollectionCoverPreview, Item } from '../types'
 import { parseDrawing } from '../drawing'
+import { formatMoney, formatQty, parseList, sumMoney } from '../list'
 import { EmojiPicker, LinkChip } from './Composer'
 import { DrawingPreview } from './DrawingCanvas'
+import { LinkifiedText } from './ListEditor'
 import { MediaLightbox, type LightboxSlide } from './MediaLightbox'
 import { MediaPart } from './Media'
 
@@ -38,10 +40,11 @@ interface ItemCardProps {
   collectionCoverPreview?: CollectionCoverPreview
   onSetCollectionCover: (cover: CollectionCoverPreview) => void
   onEditDrawing?: () => void
+  onEditList?: () => void
 }
 
 const CARD_INTERACTIVE =
-  'button, a, input, textarea, select, video, audio, .polaroid__open, .link-chip, .caption-form, .item__link-form, .item__import, .reply-form, .emoji-picker, .reaction-wrap, .item__drawing-wrap'
+  'button, a, input, textarea, select, video, audio, .polaroid__open, .link-chip, .caption-form, .item__link-form, .item__import, .reply-form, .emoji-picker, .reaction-wrap, .item__drawing-wrap, .item__list-wrap'
 
 function isCardBackgroundClick(target: EventTarget | null, card: HTMLElement): boolean {
   if (!(target instanceof HTMLElement)) return false
@@ -144,6 +147,7 @@ export function ItemCard({
   collectionCoverPreview,
   onSetCollectionCover,
   onEditDrawing,
+  onEditList,
 }: ItemCardProps) {
   const [replyOpen, setReplyOpen] = useState(false)
   const [replyText, setReplyText] = useState('')
@@ -214,6 +218,8 @@ export function ItemCard({
   const showCaption = media.length > 0 || item.type === 'link'
   const canSeeMore = item.type === 'link' && (item.previewCandidates?.length ?? 0) > 2
   const drawing = item.type === 'drawing' ? parseDrawing(item.content) : null
+  const list = item.type === 'list' ? parseList(item.content) : null
+  const listTotal = list ? sumMoney(list) : 0
 
   useEffect(() => {
     setTextDraft(item.content)
@@ -417,6 +423,57 @@ export function ItemCard({
         </button>
       ) : null}
 
+      {item.type === 'list' ? (
+        <div
+          className="item__list-wrap"
+          role="button"
+          tabIndex={0}
+          onClick={(event) => {
+            if ((event.target as HTMLElement).closest('a')) return
+            onEditList?.()
+          }}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault()
+              onEditList?.()
+            }
+          }}
+        >
+          {list && list.entries.length ? (
+            <div className="item__list">
+              <ol className="item__list-rows">
+                {list.entries.map((entry, index) => (
+                  <li key={entry.id} className="item__list-row">
+                    <span className="item__list-num">{index + 1}.</span>
+                    <div className="item__list-body">
+                      <span className="item__list-text">{entry.text.trim() || 'Untitled'}</span>
+                      {entry.note?.trim() ? (
+                        <span className="item__list-note">
+                          <LinkifiedText text={entry.note} />
+                        </span>
+                      ) : null}
+                    </div>
+                    {list.mode === 'qty' && entry.qty != null && Number.isFinite(entry.qty) ? (
+                      <span className="item__list-extra">#{formatQty(entry.qty)}</span>
+                    ) : null}
+                    {list.mode === 'money' && entry.amount != null && Number.isFinite(entry.amount) ? (
+                      <span className="item__list-extra">${formatMoney(entry.amount)}</span>
+                    ) : null}
+                  </li>
+                ))}
+              </ol>
+              {list.mode === 'money' ? (
+                <p className="item__list-total">
+                  Total <strong>${formatMoney(listTotal)}</strong>
+                </p>
+              ) : null}
+            </div>
+          ) : (
+            <span className="muted">Empty list</span>
+          )}
+        </div>
+      ) : null}
+
       {item.type === 'text' ? (
         editingText ? (
           <form
@@ -454,10 +511,14 @@ export function ItemCard({
         )
       ) : null}
 
-      {isMediaItem(item) || item.type === 'link' || item.type === 'drawing' ? (
+      {isMediaItem(item) || item.type === 'link' || item.type === 'drawing' || item.type === 'list' ? (
         <div className="item__tools">
           {item.type === 'drawing' ? (
             <button type="button" className="text-btn" onClick={onEditDrawing}>
+              Edit
+            </button>
+          ) : item.type === 'list' ? (
+            <button type="button" className="text-btn" onClick={onEditList}>
               Edit
             </button>
           ) : isMediaItem(item) ? (

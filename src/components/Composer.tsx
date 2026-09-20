@@ -24,9 +24,10 @@ interface PendingFile {
 interface ComposerProps {
   onAdd: (input: NewItemInput) => void | Promise<void>
   onDraw: () => void
+  onList: () => void
 }
 
-export function Composer({ onAdd, onDraw }: ComposerProps) {
+export function Composer({ onAdd, onDraw, onList }: ComposerProps) {
   const [text, setText] = useState('')
   const [menuOpen, setMenuOpen] = useState(false)
   const [mode, setMode] = useState<'text' | 'link' | 'media'>('text')
@@ -375,7 +376,7 @@ export function Composer({ onAdd, onDraw }: ComposerProps) {
               type="button"
               className="plus-btn"
               aria-expanded={menuOpen}
-              aria-label="Add media, link, or drawing"
+              aria-label="Add media, link, drawing, or list"
               onClick={() => setMenuOpen((open) => !open)}
             >
               +
@@ -411,6 +412,16 @@ export function Composer({ onAdd, onDraw }: ComposerProps) {
                   }}
                 >
                   Drawing
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setMenuOpen(false)
+                    onList()
+                  }}
+                >
+                  List
                 </button>
               </div>
             ) : null}
