@@ -158,6 +158,19 @@ img {
   gap: 0.5rem;
 }
 
+.install-tip--update {
+  position: fixed;
+  top: max(0.75rem, env(safe-area-inset-top, 0px));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: calc(var(--z-lightbox) + 1);
+  width: min(1120px, calc(100% - 2rem));
+  margin: 0;
+  border-color: var(--moss);
+  background: var(--moss-soft);
+  box-shadow: var(--shadow);
+}
+
 .sync-status {
   position: sticky;
   top: 0;

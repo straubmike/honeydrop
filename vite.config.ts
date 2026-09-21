@@ -8,7 +8,7 @@ export default defineConfig({
     react(),
     linkPreviewPlugin(),
     VitePWA({
-      registerType: 'autoUpdate',
+      registerType: 'prompt',
       includeAssets: ['favicon.svg', 'apple-touch-icon.png'],
       manifest: {
         name: 'Honey Drop',
