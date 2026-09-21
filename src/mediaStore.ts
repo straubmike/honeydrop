@@ -1,4 +1,10 @@
 import { deleteBoardMedia, downloadBoardMedia, isSupabaseMedia } from './api/media'
+import {
+  deletePendingMedia,
+  getPendingMediaBlob,
+  isPendingMedia,
+  pendingMediaId,
+} from './offlineStore'
 
 const DB_NAME = 'ideaboard'
 const STORE = 'media'
@@ -51,12 +57,13 @@ export function isIdbMedia(content: string): boolean {
 }
 
 export function isStoredMedia(content: string): boolean {
-  return isIdbMedia(content) || isSupabaseMedia(content)
+  return isIdbMedia(content) || isSupabaseMedia(content) || isPendingMedia(content)
 }
 
-/** Resolve blob for idb: or sb: refs. `id` is only used for legacy idb keys. */
+/** Resolve blob for idb:, sb:, or pending: refs. `id` is only used for legacy idb keys. */
 export async function resolveMediaBlob(content: string, id: string): Promise<Blob | undefined> {
   if (isSupabaseMedia(content)) return downloadBoardMedia(content)
+  if (isPendingMedia(content)) return getPendingMediaBlob(pendingMediaId(content))
   if (isIdbMedia(content)) return getMedia(id)
   return undefined
 }
@@ -65,6 +72,14 @@ export async function removeStoredMedia(content: string, id: string): Promise<vo
   if (isSupabaseMedia(content)) {
     try {
       await deleteBoardMedia(content)
+    } catch {
+      /* best-effort */
+    }
+    return
+  }
+  if (isPendingMedia(content)) {
+    try {
+      await deletePendingMedia(pendingMediaId(content))
     } catch {
       /* best-effort */
     }

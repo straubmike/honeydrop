@@ -146,7 +146,7 @@ export async function createRemoteBoard(title: string, displayName: string): Pro
 export async function joinRemoteBoard(
   code: string,
   displayName: string,
-): Promise<{ ok: true; boardId: string } | { ok: false; reason: string }> {
+): Promise<{ ok: true; boardId: string } | { ok: false; reason: string; code?: 'NOT_FOUND' | 'BOARD_FULL' }> {
   const supabase = getSupabase()
   const trimmed = code.trim().toUpperCase()
   if (!trimmed) return { ok: false, reason: 'Enter an invite code.' }
@@ -156,19 +156,27 @@ export async function joinRemoteBoard(
     p_name: displayName.trim() || 'You',
   })
 
+  if (!error && data) {
+    return { ok: true, boardId: data as string }
+  }
+
   if (error) {
     const message = error.message ?? ''
-    if (message.includes('NOT_FOUND')) {
-      return { ok: false, reason: 'No board found with that invite code.' }
-    }
     if (message.includes('BOARD_FULL')) {
-      return { ok: false, reason: 'This board already has two people.' }
+      return {
+        ok: false,
+        code: 'BOARD_FULL',
+        reason:
+          'This board already has two people. If you lost access, ask your partner to open Invite → Partner lost access and send you a new code.',
+      }
+    }
+    if (message.includes('NOT_FOUND')) {
+      return { ok: false, code: 'NOT_FOUND', reason: 'No board found with that invite code.' }
     }
     return { ok: false, reason: message || 'Could not join that board.' }
   }
 
-  if (!data) return { ok: false, reason: 'Could not join that board.' }
-  return { ok: true, boardId: data as string }
+  return { ok: false, reason: 'Could not join that board.' }
 }
 
 export async function persistBoard(board: IdeaBoard): Promise<void> {

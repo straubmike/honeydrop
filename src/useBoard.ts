@@ -14,12 +14,26 @@ import {
 } from './api/boards'
 import { claimDeviceLinkCode, createDeviceLinkCode } from './api/deviceLink'
 import { deleteBoardMediaFolder, uploadBoardMedia } from './api/media'
+import { claimSeatRecoveryCode, createSeatRecoveryCode } from './api/seatRecovery'
 import { clearItemMedia, isMediaItem, itemAttachments, itemMediaAttachments, clearCoverIfStale } from './attachments'
 import { uid } from './dates'
 import { classifyMedia, MAX_MEDIA_BYTES, normalizeUrl } from './images'
 import { isSupabaseConfigured } from './lib/supabase'
 import { fetchPreviewFiles, previewPairUrls } from './linkPreview'
 import { isStoredMedia, removeStoredMedia } from './mediaStore'
+import {
+  cacheAppSnapshot,
+  clearPersistQueueItem,
+  deletePendingMedia,
+  enqueuePersist,
+  isBrowserOnline,
+  listPendingMedia,
+  listPersistQueue,
+  loadCachedApp,
+  pendingMediaRef,
+  putPendingMedia,
+  type SyncStatus,
+} from './offlineStore'
 import { nextPin, resolvePin } from './pins'
 import { withDevSampleLocations } from './seed'
 import type {
@@ -52,7 +66,20 @@ async function filesToAttachments(
     const kind = classifyMedia(file)
     if (!kind) continue
     const id = uid()
-    const content = await uploadBoardMedia(boardId, id, file, file.type)
+    let content: string
+    try {
+      if (!isBrowserOnline()) throw new Error('offline')
+      content = await uploadBoardMedia(boardId, id, file, file.type)
+    } catch {
+      await putPendingMedia({
+        id,
+        boardId,
+        mime: file.type,
+        source: source === 'preview' ? 'preview' : 'upload',
+        blob: file,
+      })
+      content = pendingMediaRef(id)
+    }
     attachments.push({
       id,
       type: kind,
@@ -62,6 +89,26 @@ async function filesToAttachments(
     })
   }
   return attachments
+}
+
+function rewritePendingContent(board: IdeaBoard, pendingId: string, sbContent: string): IdeaBoard {
+  const rewriteAttachment = (attachment: Attachment): Attachment =>
+    attachment.id === pendingId || attachment.content === pendingMediaRef(pendingId)
+      ? { ...attachment, content: sbContent }
+      : attachment
+
+  return {
+    ...board,
+    collections: board.collections.map((collection) => ({
+      ...collection,
+      items: collection.items.map((item) => ({
+        ...item,
+        content:
+          item.content === pendingMediaRef(pendingId) ? sbContent : item.content,
+        attachments: item.attachments?.map(rewriteAttachment),
+      })),
+    })),
+  }
 }
 
 function mapBoard(
@@ -88,46 +135,130 @@ export function useApp() {
   const [ready, setReady] = useState(false)
   const [bootError, setBootError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>(() =>
+    isBrowserOnline() ? 'online' : 'offline',
+  )
+  const [syncMessage, setSyncMessage] = useState<string | null>(null)
 
   const skipPersistRef = useRef(false)
   const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const dirtyBoardsRef = useRef<Set<string>>(new Set())
   const dirtyMembersRef = useRef<Set<string>>(new Set())
   const stateRef = useRef(state)
+  const flushingRef = useRef(false)
   const boardIdsKey = state.boards.map((board) => board.id).join(',')
 
   const markBoardDirty = useCallback((boardId: string) => {
     dirtyBoardsRef.current.add(boardId)
+    void enqueuePersist({ kind: 'board', boardId })
   }, [])
 
   const markMemberDirty = useCallback((boardId: string) => {
     dirtyMembersRef.current.add(boardId)
+    void enqueuePersist({ kind: 'member', boardId })
   }, [])
 
   const flushPersist = useCallback(async () => {
     if (!isSupabaseConfigured || !stateRef.current.userId) return
-    const boardIds = [...dirtyBoardsRef.current]
-    const memberIds = [...dirtyMembersRef.current]
-    dirtyBoardsRef.current.clear()
-    dirtyMembersRef.current.clear()
+    if (!isBrowserOnline()) {
+      setSyncStatus('offline')
+      setSyncMessage('Offline — changes will sync when you reconnect')
+      for (const boardId of dirtyBoardsRef.current) {
+        await enqueuePersist({ kind: 'board', boardId })
+      }
+      for (const boardId of dirtyMembersRef.current) {
+        await enqueuePersist({ kind: 'member', boardId })
+      }
+      return
+    }
 
-    const snapshot = stateRef.current
-    await Promise.all([
-      ...boardIds.map(async (boardId) => {
-        const board = snapshot.boards.find((entry) => entry.id === boardId)
-        if (!board) return
-        await persistBoard(board)
-      }),
-      ...memberIds.map(async (boardId) => {
-        const board = snapshot.boards.find((entry) => entry.id === boardId)
-        const me = board?.members.find((member) => member.userId === snapshot.userId)
-        if (!board || !me) return
-        await persistMyMembership(boardId, snapshot.userId, {
-          name: me.name,
-          location: me.location ?? null,
-        })
-      }),
-    ])
+    if (flushingRef.current) return
+    flushingRef.current = true
+    setSyncStatus('syncing')
+    setSyncMessage(null)
+
+    try {
+      const queued = await listPersistQueue()
+      for (const item of queued) {
+        if (item.kind === 'board') dirtyBoardsRef.current.add(item.boardId)
+        else dirtyMembersRef.current.add(item.boardId)
+      }
+
+      const pending = await listPendingMedia()
+      for (const media of pending) {
+        try {
+          const sbContent = await uploadBoardMedia(media.boardId, media.id, media.blob, media.mime)
+          const nextBoards = stateRef.current.boards.map((board) =>
+            board.id === media.boardId ? rewritePendingContent(board, media.id, sbContent) : board,
+          )
+          stateRef.current = { ...stateRef.current, boards: nextBoards }
+          skipPersistRef.current = true
+          setState(stateRef.current)
+          dirtyBoardsRef.current.add(media.boardId)
+          await deletePendingMedia(media.id)
+        } catch (error) {
+          console.error('Pending media upload failed', error)
+        }
+      }
+
+      const boardIds = [...dirtyBoardsRef.current]
+      const memberIds = [...dirtyMembersRef.current]
+      dirtyBoardsRef.current.clear()
+      dirtyMembersRef.current.clear()
+
+      const snapshot = stateRef.current
+      const failures: string[] = []
+
+      await Promise.all([
+        ...boardIds.map(async (boardId) => {
+          const board = snapshot.boards.find((entry) => entry.id === boardId)
+          if (!board) {
+            await clearPersistQueueItem({ kind: 'board', boardId })
+            return
+          }
+          try {
+            await persistBoard(board)
+            await clearPersistQueueItem({ kind: 'board', boardId })
+          } catch (error) {
+            console.error('Failed to save board', error)
+            dirtyBoardsRef.current.add(boardId)
+            await enqueuePersist({ kind: 'board', boardId })
+            failures.push(boardId)
+          }
+        }),
+        ...memberIds.map(async (boardId) => {
+          const board = snapshot.boards.find((entry) => entry.id === boardId)
+          const me = board?.members.find((member) => member.userId === snapshot.userId)
+          if (!board || !me) {
+            await clearPersistQueueItem({ kind: 'member', boardId })
+            return
+          }
+          try {
+            await persistMyMembership(boardId, snapshot.userId, {
+              name: me.name,
+              location: me.location ?? null,
+            })
+            await clearPersistQueueItem({ kind: 'member', boardId })
+          } catch (error) {
+            console.error('Failed to save membership', error)
+            dirtyMembersRef.current.add(boardId)
+            await enqueuePersist({ kind: 'member', boardId })
+            failures.push(boardId)
+          }
+        }),
+      ])
+
+      if (failures.length) {
+        setSyncStatus('error')
+        setSyncMessage('Could not sync — will retry when online')
+      } else {
+        setSyncStatus('online')
+        setSyncMessage(null)
+        await cacheAppSnapshot(stateRef.current)
+      }
+    } finally {
+      flushingRef.current = false
+    }
   }, [])
 
   const schedulePersist = useCallback(() => {
@@ -136,6 +267,12 @@ export function useApp() {
       persistTimerRef.current = null
       void flushPersist().catch((error) => {
         console.error('Failed to save board', error)
+        setSyncStatus(isBrowserOnline() ? 'error' : 'offline')
+        setSyncMessage(
+          isBrowserOnline()
+            ? 'Could not sync — will retry when online'
+            : 'Offline — changes will sync when you reconnect',
+        )
       })
     }, PERSIST_MS)
   }, [flushPersist])
@@ -156,17 +293,30 @@ export function useApp() {
         const profile = await loadProfile(userId)
         const boards = await fetchMyBoards()
         if (cancelled) return
-        skipPersistRef.current = true
-        setState({
+        const nextState: AppState = {
           userId,
           displayName: profile.displayName,
           boards: import.meta.env.DEV ? withDevSampleLocations(boards, userId) : boards,
-        })
+        }
+        skipPersistRef.current = true
+        setState(nextState)
         setBootError(null)
+        setSyncStatus('online')
+        setSyncMessage(null)
+        await cacheAppSnapshot(nextState)
       } catch (error) {
         if (cancelled) return
-        const message = error instanceof Error ? error.message : 'Could not connect to Honey Drop.'
-        setBootError(message)
+        const cached = await loadCachedApp()
+        if (cached?.userId) {
+          skipPersistRef.current = true
+          setState(cached)
+          setBootError(null)
+          setSyncStatus('offline')
+          setSyncMessage('Offline — showing last saved boards')
+        } else {
+          const message = error instanceof Error ? error.message : 'Could not connect to Honey Drop.'
+          setBootError(message)
+        }
       } finally {
         if (!cancelled) setReady(true)
       }
@@ -176,6 +326,28 @@ export function useApp() {
     }
   }, [])
 
+  useEffect(() => {
+    const onOnline = () => {
+      setSyncStatus('syncing')
+      setSyncMessage(null)
+      void flushPersist()
+    }
+    const onOffline = () => {
+      setSyncStatus('offline')
+      setSyncMessage('Offline — changes will sync when you reconnect')
+    }
+    window.addEventListener('online', onOnline)
+    window.addEventListener('offline', onOffline)
+    return () => {
+      window.removeEventListener('online', onOnline)
+      window.removeEventListener('offline', onOffline)
+    }
+  }, [flushPersist])
+
+  useEffect(() => {
+    if (!ready || !state.userId) return
+    void cacheAppSnapshot(state)
+  }, [ready, state])
   useEffect(() => {
     if (!ready || skipPersistRef.current) {
       skipPersistRef.current = false
@@ -283,17 +455,26 @@ export function useApp() {
       }
       setBusy(true)
       try {
-        const result = await joinRemoteBoard(rawCode, state.displayName)
-        if (!result.ok) return result
-        const board = await fetchBoard(result.boardId)
+        let boardId: string | null = null
+        const invite = await joinRemoteBoard(rawCode, state.displayName)
+        if (invite.ok) {
+          boardId = invite.boardId
+        } else if (invite.code === 'NOT_FOUND') {
+          const recovered = await claimSeatRecoveryCode(rawCode, state.displayName)
+          if (!recovered.ok) return recovered
+          boardId = recovered.boardId
+        } else {
+          return invite
+        }
+        const board = await fetchBoard(boardId)
         if (!board) return { ok: false, reason: 'Joined, but the board could not be loaded.' }
         skipPersistRef.current = true
         setState((prev) => {
           const without = prev.boards.filter((entry) => entry.id !== board.id)
           return { ...prev, boards: [board, ...without] }
         })
-        setActiveBoardId(result.boardId)
-        return result
+        setActiveBoardId(boardId)
+        return { ok: true, boardId }
       } catch (error) {
         return {
           ok: false,
@@ -926,6 +1107,8 @@ export function useApp() {
 
   const createDeviceLink = useCallback(async () => createDeviceLinkCode(), [])
 
+  const createSeatRecovery = useCallback(async (boardId: string) => createSeatRecoveryCode(boardId), [])
+
   const claimDeviceLink = useCallback(async (code: string) => {
     const result = await claimDeviceLinkCode(code)
     if (!result.ok) return result
@@ -944,6 +1127,8 @@ export function useApp() {
     ready,
     bootError,
     busy,
+    syncStatus,
+    syncMessage,
     userId: state.userId,
     displayName: state.displayName,
     boards: state.boards,
@@ -979,6 +1164,7 @@ export function useApp() {
     cycleLinkPreview,
     createDeviceLink,
     claimDeviceLink,
+    createSeatRecovery,
   }
 }
 

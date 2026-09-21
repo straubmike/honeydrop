@@ -46,3 +46,5 @@ Smoke test: Device A creates a board → copies invite code → Device B joins �
 - **Calendar** — events with titles, descriptions, date ranges, all-day or timed hours, and optional yearly/monthly repeat.
 - **Ideas** — the same collections without dates.
 - Inside a collection, drag the handle to place a card anywhere on the board. One entry can hold several photos, GIFs, or clips. Links pull one or two photos from the page automatically.
+- **PWA** — installable on Android/iPhone home screens; offline edits queue and sync when back online. See [`docs/PWA_TESTING.md`](docs/PWA_TESTING.md).
+- **Seat recovery** — if a partner loses their anonymous session, the other generates a recovery code (Invite → Partner lost access). Requires migration `003_seat_recovery.sql`.

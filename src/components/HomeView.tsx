@@ -1,4 +1,4 @@
-import { useId, useState, type FormEvent } from 'react'
+import { useEffect, useId, useState, type FormEvent, type ReactNode } from 'react'
 import type { IdeaBoard } from '../types'
 import { BrandMark } from './BrandMark'
 import { DeviceLinkIcon } from './DeviceLinkModal'
@@ -9,6 +9,11 @@ interface HomeViewProps {
   userId: string
   displayName: string
   busy?: boolean
+  initialJoinCode?: string | null
+  routeNotice?: string | null
+  onDismissNotice?: () => void
+  syncBanner?: ReactNode
+  installPrompt?: ReactNode
   onDisplayName: (name: string) => void
   onOpen: (boardId: string) => void
   onCreate: (title: string) => void
@@ -35,6 +40,11 @@ export function HomeView({
   userId,
   displayName,
   busy = false,
+  initialJoinCode = null,
+  routeNotice = null,
+  onDismissNotice,
+  syncBanner,
+  installPrompt,
   onDisplayName,
   onOpen,
   onCreate,
@@ -56,6 +66,12 @@ export function HomeView({
   const joinHeadingId = useId()
   const deleteHeadingId = useId()
   const aboutPanelId = useId()
+
+  useEffect(() => {
+    if (!initialJoinCode) return
+    setCode(initialJoinCode)
+    setJoining(true)
+  }, [initialJoinCode])
 
   const submitCreate = (event: FormEvent) => {
     event.preventDefault()
@@ -120,6 +136,19 @@ export function HomeView({
           </label>
         </div>
       </header>
+
+      {syncBanner}
+      {installPrompt}
+      {routeNotice ? (
+        <div className="sync-status sync-status--error" role="status">
+          <span>{routeNotice}</span>
+          {onDismissNotice ? (
+            <button type="button" className="ghost" onClick={onDismissNotice}>
+              Dismiss
+            </button>
+          ) : null}
+        </div>
+      ) : null}
 
       <section className="home">
         <header className="list-pane__header">
@@ -284,8 +313,12 @@ export function HomeView({
             <header className="modal__header">
               <h2 id={joinHeadingId}>Join a board</h2>
             </header>
+            <p className="lede">
+              Enter an invite code from your partner, or a recovery code if you lost access to a board
+              you were already on.
+            </p>
             <label className="field">
-              <span>Invite code</span>
+              <span>Invite or recovery code</span>
               <input
                 value={code}
                 onChange={(event) => {

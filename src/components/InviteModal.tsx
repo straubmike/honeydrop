@@ -1,4 +1,5 @@
-import { useId, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
+import { joinUrl, shareOrCopy } from '../lib/routes'
 import { ModalBackdrop } from './ModalBackdrop'
 
 interface InviteModalProps {
@@ -7,6 +8,7 @@ interface InviteModalProps {
   hasPartner: boolean
   partnerName?: string
   onClose: () => void
+  onCreateRecovery?: () => Promise<string>
 }
 
 export function InviteModal({
@@ -15,18 +17,55 @@ export function InviteModal({
   hasPartner,
   partnerName,
   onClose,
+  onCreateRecovery,
 }: InviteModalProps) {
   const headingId = useId()
   const [copied, setCopied] = useState(false)
+  const [shared, setShared] = useState(false)
+  const [recoveryCode, setRecoveryCode] = useState<string | null>(null)
+  const [recoveryBusy, setRecoveryBusy] = useState(false)
+  const [recoveryError, setRecoveryError] = useState('')
 
-  const copyCode = async () => {
+  useEffect(() => {
+    setRecoveryCode(null)
+    setRecoveryError('')
+  }, [hasPartner, inviteCode])
+
+  const inviteLink = joinUrl(inviteCode)
+  const recoveryLink = recoveryCode ? joinUrl(recoveryCode) : null
+
+  const copyText = async (text: string) => {
     try {
-      await navigator.clipboard.writeText(inviteCode)
+      await navigator.clipboard.writeText(text)
       setCopied(true)
       window.setTimeout(() => setCopied(false), 1600)
     } catch {
-      window.prompt('Copy this invite code:', inviteCode)
+      window.prompt('Copy this:', text)
     }
+  }
+
+  const shareText = async (text: string) => {
+    try {
+      const result = await shareOrCopy(text, `Join ${boardTitle} on Honey Drop`)
+      if (result === 'shared' || result === 'copied') {
+        setShared(true)
+        window.setTimeout(() => setShared(false), 1600)
+      }
+    } catch {
+      /* user aborted share sheet */
+    }
+  }
+
+  const startRecovery = () => {
+    if (!onCreateRecovery) return
+    setRecoveryBusy(true)
+    setRecoveryError('')
+    void onCreateRecovery()
+      .then((code) => setRecoveryCode(code))
+      .catch((err) => {
+        setRecoveryError(err instanceof Error ? err.message : 'Could not create a recovery code.')
+      })
+      .finally(() => setRecoveryBusy(false))
   }
 
   return (
@@ -43,20 +82,69 @@ export function InviteModal({
         </header>
 
         {hasPartner ? (
-          <p className="lede">
-            {partnerName || 'Your partner'} is already on this board. New invites are full for now
-            (two people per board).
-          </p>
+          <>
+            <p className="lede">
+              {partnerName || 'Your partner'} is already on this board. New first-time invites are full
+              (two people per board).
+            </p>
+            {recoveryCode && recoveryLink ? (
+              <>
+                <p className="lede">
+                  Send this recovery code or link. They enter it the same way as a first invite (Join
+                  with code) to reclaim their seat.
+                </p>
+                <div className="invite-code">
+                  <span className="invite-code__value">{recoveryCode}</span>
+                  <button type="button" className="primary" onClick={() => void copyText(recoveryCode)}>
+                    {copied ? 'Copied' : 'Copy code'}
+                  </button>
+                </div>
+                <div className="invite-code" style={{ marginTop: '0.75rem' }}>
+                  <span className="invite-code__value invite-code__value--link">{recoveryLink}</span>
+                  <button type="button" className="primary" onClick={() => void shareText(recoveryLink)}>
+                    {shared ? 'Shared' : 'Share link'}
+                  </button>
+                </div>
+                <p className="muted" style={{ marginTop: '0.75rem' }}>
+                  Code expires in about an hour.
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="lede">
+                  If they cleared their browser data or lost access, generate a recovery code so they
+                  can reclaim the other seat.
+                </p>
+                {recoveryError ? <p className="field-error">{recoveryError}</p> : null}
+                <div className="modal__actions" style={{ justifyContent: 'flex-start' }}>
+                  <button
+                    type="button"
+                    className="primary"
+                    disabled={recoveryBusy || !onCreateRecovery}
+                    onClick={startRecovery}
+                  >
+                    {recoveryBusy ? 'Creating…' : 'Partner lost access?'}
+                  </button>
+                </div>
+              </>
+            )}
+          </>
         ) : (
           <>
             <p className="lede">
-              Send this code to your partner. They can join from the home screen with{' '}
-              <strong>Join with code</strong>.
+              Send this code or link to your partner. They can join from the home screen with{' '}
+              <strong>Join with code</strong>, or open the link directly.
             </p>
             <div className="invite-code">
               <span className="invite-code__value">{inviteCode}</span>
-              <button type="button" className="primary" onClick={() => void copyCode()}>
+              <button type="button" className="primary" onClick={() => void copyText(inviteCode)}>
                 {copied ? 'Copied' : 'Copy code'}
+              </button>
+            </div>
+            <div className="invite-code" style={{ marginTop: '0.75rem' }}>
+              <span className="invite-code__value invite-code__value--link">{inviteLink}</span>
+              <button type="button" className="primary" onClick={() => void shareText(inviteLink)}>
+                {shared ? 'Shared' : 'Share link'}
               </button>
             </div>
           </>

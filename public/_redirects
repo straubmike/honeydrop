@@ -1,0 +1,4 @@
+/* SPA fallback for hosts that support _redirects (e.g. Netlify).
+   For nginx / honeydrop.app VPS, use: try_files $uri $uri/ /index.html;
+*/
+/*    /index.html   200

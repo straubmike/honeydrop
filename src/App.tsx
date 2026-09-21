@@ -6,7 +6,17 @@ import { CollectionForm } from './components/CollectionForm'
 import { DeviceLinkIcon, DeviceLinkModal } from './components/DeviceLinkModal'
 import { HomeView } from './components/HomeView'
 import { IdeasView } from './components/IdeasView'
+import { InstallPrompt } from './components/InstallPrompt'
 import { InviteModal } from './components/InviteModal'
+import { SyncStatusBanner } from './components/SyncStatusBanner'
+import {
+  boardPath,
+  homePath,
+  parsePath,
+  pushPath,
+  replacePath,
+  type AppRoute,
+} from './lib/routes'
 import type { BoardMember, Collection, CollectionKind, GeoPoint, Tab } from './types'
 import { useApp } from './useBoard'
 
@@ -92,6 +102,10 @@ export default function App() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [inviteOpen, setInviteOpen] = useState(false)
   const [deviceLinkOpen, setDeviceLinkOpen] = useState(false)
+  const [pendingJoinCode, setPendingJoinCode] = useState<string | null>(null)
+  const [prefillJoinCode, setPrefillJoinCode] = useState<string | null>(null)
+  const [routeNotice, setRouteNotice] = useState<string | null>(null)
+  const joinHandledRef = useRef<string | null>(null)
   const [cursor, setCursor] = useState(() => {
     const now = new Date()
     return new Date(now.getFullYear(), now.getMonth(), 1)
@@ -110,19 +124,80 @@ export default function App() {
   const hasPartner = Boolean(partner)
   const me = board?.members.find((member) => member.userId === app.userId)
 
+  const applyRoute = (route: AppRoute, mode: 'push' | 'replace' = 'replace') => {
+    const write = mode === 'push' ? pushPath : replacePath
+    if (route.name === 'home') {
+      app.closeBoard()
+      setSelectedId(null)
+      write(homePath())
+      return
+    }
+    if (route.name === 'join') {
+      setPendingJoinCode(route.code)
+      app.closeBoard()
+      write(`/join/${encodeURIComponent(route.code)}`)
+      return
+    }
+    const known = app.boards.some((entry) => entry.id === route.boardId)
+    if (!known) {
+      setRouteNotice('That board is not on this device. Join with a code, or ask your partner for recovery.')
+      app.closeBoard()
+      write(homePath())
+      return
+    }
+    app.openBoard(route.boardId)
+    if (route.collectionId) setSelectedId(route.collectionId)
+    else setSelectedId(null)
+    write(boardPath(route.boardId, route.collectionId))
+  }
+
+  useEffect(() => {
+    if (!app.ready) return
+    applyRoute(parsePath(window.location.pathname), 'replace')
+    const onPop = () => applyRoute(parsePath(window.location.pathname), 'replace')
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+    // Intentionally once when ready — later navigation uses helpers below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [app.ready])
+
+  useEffect(() => {
+    if (!app.ready || !pendingJoinCode) return
+    if (joinHandledRef.current === pendingJoinCode) return
+    joinHandledRef.current = pendingJoinCode
+    void app.joinBoard(pendingJoinCode).then((result) => {
+      const code = pendingJoinCode
+      setPendingJoinCode(null)
+      if (!result.ok) {
+        setRouteNotice(result.reason)
+        setPrefillJoinCode(code)
+        replacePath(homePath())
+        return
+      }
+      setRouteNotice(null)
+      setPrefillJoinCode(null)
+      replacePath(boardPath(result.boardId))
+    })
+  }, [app, pendingJoinCode])
+
+  useEffect(() => {
+    if (!board) {
+      if (!pendingJoinCode) replacePath(homePath())
+      document.title = 'Honey Drop · Idea Board'
+      return
+    }
+    document.title = `${board.title.trim() || 'Ours'} · Idea Board`
+    const path = selected
+      ? boardPath(board.id, selected.id)
+      : boardPath(board.id)
+    replacePath(path)
+  }, [board, selected, pendingJoinCode])
+
   const focusLocation = (point: GeoPoint) => {
     setSelectedId(null)
     setTab('calendar')
     setMapFocus(point)
   }
-
-  useEffect(() => {
-    if (!board) {
-      document.title = 'Honey Drop · Idea Board'
-      return
-    }
-    document.title = `${board.title.trim() || 'Ours'} · Idea Board`
-  }, [board])
 
   useEffect(() => {
     setSelectedId(null)
@@ -137,6 +212,22 @@ export default function App() {
     setFormKind(kind)
     setEditingId(collection?.id ?? null)
   }
+
+  const openBoard = (boardId: string) => {
+    setRouteNotice(null)
+    app.openBoard(boardId)
+    pushPath(boardPath(boardId))
+  }
+
+  const goHome = () => {
+    app.closeBoard()
+    setSelectedId(null)
+    pushPath(homePath())
+  }
+
+  const syncBanner = (
+    <SyncStatusBanner status={app.syncStatus} message={app.syncMessage} />
+  )
 
   if (!app.ready) {
     return (
@@ -189,7 +280,7 @@ export default function App() {
           userId={app.userId}
           displayName={app.displayName}
           onDisplayName={app.setDisplayName}
-          onOpen={app.openBoard}
+          onOpen={openBoard}
           onCreate={(title) => void app.createBoard(title)}
           onJoin={app.joinBoard}
           onRequestDelete={app.requestBoardDeletion}
@@ -197,6 +288,11 @@ export default function App() {
           onConfirmDelete={app.confirmBoardDeletion}
           busy={app.busy}
           onOpenDeviceLink={() => setDeviceLinkOpen(true)}
+          initialJoinCode={prefillJoinCode}
+          routeNotice={routeNotice}
+          onDismissNotice={() => setRouteNotice(null)}
+          syncBanner={syncBanner}
+          installPrompt={<InstallPrompt />}
         />
         {deviceLinkModal}
       </>
@@ -210,27 +306,38 @@ export default function App() {
   if (selected) {
     return (
       <div className="shell shell--detail">
+        {syncBanner}
         <CollectionDetail
           collection={selected}
           currentUserId={app.userId}
           nameByUserId={nameByUserId}
-          onBack={() => setSelectedId(null)}
+          onBack={() => {
+            setSelectedId(null)
+            pushPath(boardPath(board.id))
+          }}
           onEdit={() => openForm(selected.kind, selected)}
           onDelete={() => {
             app.deleteCollection(selected.id)
             setSelectedId(null)
+            pushPath(boardPath(board.id))
           }}
           onAddItem={(input, boardWidth) => app.addItem(selected.id, input, boardWidth)}
           onDeleteItem={(itemId) => app.deleteItem(selected.id, itemId)}
-          onMoveItem={(itemId, x, y, boardWidth) => app.moveItem(selected.id, itemId, x, y, boardWidth)}
+          onMoveItem={(itemId, x, y, boardWidth) =>
+            app.moveItem(selected.id, itemId, x, y, boardWidth)
+          }
           onReorderItem={(activeId, toIndex) => app.reorderItems(selected.id, activeId, toIndex)}
           onBringItemToFront={(itemId) => app.bringItemToFront(selected.id, itemId)}
           onAddFiles={(itemId, files) => void app.addAttachments(selected.id, itemId, files)}
           onAddLink={(itemId, url) => app.addLink(selected.id, itemId, url)}
-          onRemoveFile={(itemId, attachmentId) => app.deleteAttachment(selected.id, itemId, attachmentId)}
+          onRemoveFile={(itemId, attachmentId) =>
+            app.deleteAttachment(selected.id, itemId, attachmentId)
+          }
           onCaption={(itemId, caption) => app.updateCaption(selected.id, itemId, caption)}
           onContent={(itemId, content) => app.updateContent(selected.id, itemId, content)}
-          onCyclePreview={(itemId, direction) => app.cycleLinkPreview(selected.id, itemId, direction)}
+          onCyclePreview={(itemId, direction) =>
+            app.cycleLinkPreview(selected.id, itemId, direction)
+          }
           onSetCollectionCover={(cover) => app.setCollectionCover(selected.id, cover)}
           onReact={(itemId, emoji) => app.toggleReaction(selected.id, itemId, emoji)}
           onReply={(itemId, text) => app.addReply(selected.id, itemId, text)}
@@ -239,7 +346,7 @@ export default function App() {
           <CollectionForm
             kind={formKind}
             initial={editing}
-            defaultDate={selectedDate}
+            defaultDate={formKind === 'calendar' ? selectedDate : null}
             onClose={() => {
               setFormKind(null)
               setEditingId(null)
@@ -253,12 +360,14 @@ export default function App() {
             }}
           />
         ) : null}
+        {deviceLinkModal}
       </div>
     )
   }
 
   return (
     <div className="shell">
+      {syncBanner}
       <header className="masthead">
         <div className="brand">
           <BrandMark />
@@ -268,8 +377,17 @@ export default function App() {
           </div>
         </div>
         <div className="who-row">
-          <button type="button" className="back-btn" onClick={app.closeBoard} aria-label="Back to all boards">
+          <button type="button" className="back-btn" onClick={goHome} aria-label="Back to all boards">
             ←
+          </button>
+          <button
+            type="button"
+            className="back-btn"
+            onClick={() => setInviteOpen(true)}
+            aria-label={hasPartner ? 'Partner access help' : 'Invite partner'}
+            title={hasPartner ? 'Partner access help' : 'Invite partner'}
+          >
+            ✉
           </button>
           <button
             type="button"
@@ -299,14 +417,13 @@ export default function App() {
             <span>Partner</span>
             <div className="who__field">
               {partner?.location ? (
-                <LocationPin label={partner.name || 'Partner'} onClick={() => focusLocation(partner.location!)} />
+                <LocationPin
+                  label={partner.name || 'Partner'}
+                  onClick={() => focusLocation(partner.location!)}
+                />
               ) : null}
               {hasPartner ? (
-                <input
-                  value={partner?.name ?? 'Partner'}
-                  readOnly
-                  aria-label="Partner name"
-                />
+                <input value={partner?.name ?? 'Partner'} readOnly aria-label="Partner name" />
               ) : (
                 <button
                   type="button"
@@ -390,6 +507,7 @@ export default function App() {
           hasPartner={hasPartner}
           partnerName={partner?.name}
           onClose={() => setInviteOpen(false)}
+          onCreateRecovery={() => app.createSeatRecovery(board.id)}
         />
       ) : null}
       {deviceLinkModal}
