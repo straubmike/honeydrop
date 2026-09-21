@@ -110,7 +110,8 @@ export function DeviceLinkModal({ onClose, onCreateCode, onClaimCode }: DeviceLi
         {tab === 'share' ? (
           <>
             <p className="lede">
-              On your other device, open Honey Drop and enter this code. Expires in 15 minutes.
+              On your other device, open Honey Drop and enter this code. Both devices will show the
+              same boards. Expires in 15 minutes.
             </p>
             {busy && !code ? <p className="muted">Creating code…</p> : null}
             {code ? (
@@ -130,7 +131,7 @@ export function DeviceLinkModal({ onClose, onCreateCode, onClaimCode }: DeviceLi
           </>
         ) : done ? (
           <>
-            <p className="lede">Linked. Your boards from the other device should appear on this one.</p>
+            <p className="lede">Linked. This device now shares the same boards as your other one.</p>
             <div className="modal__actions">
               <button type="button" className="primary" onClick={onClose}>
                 Done
@@ -140,7 +141,8 @@ export function DeviceLinkModal({ onClose, onCreateCode, onClaimCode }: DeviceLi
         ) : (
           <form onSubmit={submitClaim}>
             <p className="lede">
-              Enter the code from your other device to have your boards visible here.
+              Enter the code shown on your other device. You will keep using the same account on both
+              devices.
             </p>
             <label className="field">
               <span>Device code</span>

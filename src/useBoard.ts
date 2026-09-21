@@ -1112,14 +1112,15 @@ export function useApp() {
   const claimDeviceLink = useCallback(async (code: string) => {
     const result = await claimDeviceLinkCode(code)
     if (!result.ok) return result
-    const profile = await loadProfile(stateRef.current.userId)
+    const profile = await loadProfile(result.userId)
     const boards = await fetchMyBoards()
     skipPersistRef.current = true
-    setState((prev) => ({
-      ...prev,
+    setState({
+      userId: result.userId,
       displayName: profile.displayName,
       boards,
-    }))
+    })
+    setActiveBoardId(null)
     return { ok: true as const }
   }, [])
 
