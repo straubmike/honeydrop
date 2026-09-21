@@ -10,7 +10,7 @@ const publicDir = path.join(__dirname, '..', 'public')
 // center so the bulky head doesn't look top-heavy (optical centering).
 const svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="96" fill="#c0562a"/>
+  <rect width="512" height="512" rx="96" fill="#d96a38"/>
   <g transform="translate(256 272) scale(5) translate(-14 -28)">
     <path fill="#e8b14a" d="M14 1.8c3.4 0 6 1.5 6 3.4 0 .7-.3 1.3-.8 1.8H8.8C8.3 6.5 8 5.9 8 5.2c0-1.9 2.6-3.4 6-3.4Z"/>
     <rect x="8.2" y="6.8" width="11.6" height="2.5" rx="1.2" fill="#8f3a16"/>
