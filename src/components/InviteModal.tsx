@@ -68,6 +68,8 @@ export function InviteModal({
       .finally(() => setRecoveryBusy(false))
   }
 
+  const partnerLabel = partnerName?.trim() || 'your partner'
+
   return (
     <ModalBackdrop onClose={onClose}>
       <div
@@ -78,21 +80,17 @@ export function InviteModal({
         onClick={(event) => event.stopPropagation()}
       >
         <header className="modal__header">
-          <h2 id={headingId}>Invite to {boardTitle}</h2>
+          <h2 id={headingId}>{hasPartner ? 'Recovery Code' : `Invite to ${boardTitle}`}</h2>
         </header>
 
         {hasPartner ? (
           <>
             <p className="lede">
-              {partnerName || 'Your partner'} is already on this board. New first-time invites are full
-              (two people per board).
+              If {partnerLabel} has lost access to the board, generate and share with them a recovery
+              code below.
             </p>
             {recoveryCode && recoveryLink ? (
               <>
-                <p className="lede">
-                  Send this recovery code or link. They enter it the same way as a first invite (Join
-                  with code) to reclaim their seat.
-                </p>
                 <div className="invite-code">
                   <span className="invite-code__value">{recoveryCode}</span>
                   <button type="button" className="primary" onClick={() => void copyText(recoveryCode)}>
@@ -111,10 +109,6 @@ export function InviteModal({
               </>
             ) : (
               <>
-                <p className="lede">
-                  If they cleared their browser data or lost access, generate a recovery code so they
-                  can reclaim the other seat.
-                </p>
                 {recoveryError ? <p className="field-error">{recoveryError}</p> : null}
                 <div className="modal__actions" style={{ justifyContent: 'flex-start' }}>
                   <button
@@ -123,7 +117,7 @@ export function InviteModal({
                     disabled={recoveryBusy || !onCreateRecovery}
                     onClick={startRecovery}
                   >
-                    {recoveryBusy ? 'Creating…' : 'Partner lost access?'}
+                    {recoveryBusy ? 'Creating…' : 'Generate recovery code'}
                   </button>
                 </div>
               </>
