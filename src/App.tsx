@@ -383,15 +383,6 @@ export default function App() {
           <button
             type="button"
             className="back-btn"
-            onClick={() => setInviteOpen(true)}
-            aria-label={hasPartner ? 'Partner access help' : 'Invite partner'}
-            title={hasPartner ? 'Partner access help' : 'Invite partner'}
-          >
-            ✉
-          </button>
-          <button
-            type="button"
-            className="back-btn"
             onClick={() => setDeviceLinkOpen(true)}
             aria-label="Use another device"
             title="Use another device"
@@ -423,7 +414,15 @@ export default function App() {
                 />
               ) : null}
               {hasPartner ? (
-                <input value={partner?.name ?? 'Partner'} readOnly aria-label="Partner name" />
+                <button
+                  type="button"
+                  className="who__partner-btn"
+                  onClick={() => setInviteOpen(true)}
+                  aria-label={`Partner access help for ${partner?.name ?? 'Partner'}`}
+                  title="Partner lost access? Generate a recovery code"
+                >
+                  {partner?.name?.trim() || 'Partner'}
+                </button>
               ) : (
                 <button
                   type="button"

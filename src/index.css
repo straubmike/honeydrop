@@ -302,6 +302,27 @@ img {
   cursor: default;
 }
 
+.who__partner-btn {
+  width: 11rem;
+  margin: 0;
+  padding: 0.45rem 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.95rem;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.who__partner-btn:hover,
+.who__partner-btn:focus-visible {
+  border-color: var(--terracotta);
+  outline: none;
+}
+
 .pin {
   width: 22px;
   height: 44px;
@@ -2403,7 +2424,8 @@ body.draw-open {
   }
 
   .who input,
-  .who__invite {
+  .who__invite,
+  .who__partner-btn {
     width: 100%;
     min-width: 0;
   }
