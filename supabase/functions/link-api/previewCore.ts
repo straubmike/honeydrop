@@ -2,11 +2,15 @@
 // Keep HTML caps tight: Supabase edge isolates allow ~2s CPU / ~250MB; full PDP
 // downloads + deep JSON walks trip WORKER_RESOURCE_LIMIT (HTTP 546).
 const MAX_HTML = 400_000
+/** ANF/Hollister KIC_ keys appear in the first few KB of Wayback HTML — stay tiny. */
+const ANF_HTML_BUDGET = 96_000
 const MAX_EMBEDDED_JSON = 200_000
 const MAX_IMAGE = 8 * 1024 * 1024
 const MAX_REMOTE_MEDIA = 40 * 1024 * 1024
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36'
+/** Bumped when edge scrape strategy changes — appears in live JSON so redeploy is verifiable. */
+export const LINK_PREVIEW_REVISION = 'anf-lite-2'
 
 /** Stream-read a response and stop at maxBytes so edge never buffers multi-MB bodies. */
 async function readResponseText(response: Response, maxBytes: number): Promise<string> {
@@ -314,6 +318,23 @@ function embeddedProductImages(html: string, pageUrl: string): ImageCandidate[] 
 function abercrombieHost(pageUrl: string): boolean {
   try {
     return /(^|\.)abercrombie\.com$/i.test(new URL(pageUrl).hostname)
+  } catch {
+    return false
+  }
+}
+
+function blockedRetailHost(pageUrl: string): boolean {
+  try {
+    return /(^|\.)abercrombie\.com$|(^|\.)hollisterco\.com$/i.test(new URL(pageUrl).hostname)
+  } catch {
+    return false
+  }
+}
+
+/** PDP paths only — category/home pages have no useful KIC_ payload for previews. */
+function anfProductPath(pageUrl: string): boolean {
+  try {
+    return /\/shop\/[^/]+\/p\//i.test(new URL(pageUrl).pathname)
   } catch {
     return false
   }
@@ -698,19 +719,97 @@ function cacheSet(key: string, value: Awaited<ReturnType<typeof previewFromHtml>
   previewCache.set(key, { expires: Date.now() + PREVIEW_CACHE_TTL_MS, value })
 }
 
-async function fetchHtml(url: string, timeoutMs: number): Promise<string | null> {
+async function fetchHtml(url: string, timeoutMs: number, maxBytes = MAX_HTML): Promise<string | null> {
   try {
     const response = await fetch(url, {
       redirect: 'follow',
-      headers: { 'User-Agent': UA, Accept: 'text/html,application/xhtml+xml' },
+      headers: {
+        'User-Agent': UA,
+        Accept: 'text/html,application/xhtml+xml',
+        // Ask archives/CDNs for a prefix only — ANF KIC_ keys live near the top.
+        Range: `bytes=0-${maxBytes - 1}`,
+      },
       signal: AbortSignal.timeout(timeoutMs),
     })
-    const html = await readResponseText(response, MAX_HTML)
+    const html = await readResponseText(response, maxBytes)
     if (!/og:image|KIC_|application\/ld\+json|__NEXT_DATA__/i.test(html)) return null
     return html
   } catch {
     return null
   }
+}
+
+/**
+ * Ultra-light Abercrombie/Hollister path for Supabase edge (~2s CPU / ~250MB).
+ * One Range-capped Wayback fetch + Scene7 KIC_ regex — no deep JSON, no multi-snapshot chase.
+ */
+async function previewAbercrombieLite(target: string): Promise<{
+  title?: string
+  description?: string
+  images: string[]
+  candidates: string[]
+  debug?: string
+}> {
+  const canonical = canonicalPreviewUrl(target)
+  const cacheKey = `anf:${canonical}`
+  const cached = cacheGet(cacheKey)
+  if (cached) return { ...cached, debug: 'cache' }
+
+  if (!anfProductPath(canonical)) {
+    return { candidates: [], images: [], debug: 'anf:not-pdp' }
+  }
+
+  const notes: string[] = []
+  const tryHtml = async (url: string, label: string, timeoutMs: number) => {
+    const html = await fetchHtml(url, timeoutMs, ANF_HTML_BUDGET)
+    if (!html) {
+      notes.push(`${label}:empty`)
+      return null
+    }
+    notes.push(`${label}:${html.length}`)
+    const parsed = previewFromHtml(html, canonical)
+    if (parsed.candidates.length) {
+      cacheSet(cacheKey, parsed)
+      return { ...parsed, debug: notes.join('|') }
+    }
+    notes.push(`${label}:no-kic`)
+    return null
+  }
+
+  // Prefer raw id_ snapshot (no toolbar rewrite). Range keeps payload ~96KB.
+  const quick =
+    (await tryHtml(`https://web.archive.org/web/2id_/${canonical}`, 'wb2id', 7000)) ||
+    (await tryHtml(`https://web.archive.org/web/2/${canonical}`, 'wb2', 5000))
+  if (quick) return quick
+
+  // One availability lookup → one concrete id_ snapshot (skip non-id_ to save CPU).
+  try {
+    const available = await fetch(
+      `https://archive.org/wayback/available?url=${encodeURIComponent(canonical)}`,
+      { signal: AbortSignal.timeout(3500) },
+    )
+    if (available.ok) {
+      const payload = (await available.json()) as {
+        archived_snapshots?: { closest?: { available?: boolean; url?: string } }
+      }
+      const closest = payload.archived_snapshots?.closest
+      if (closest?.available && closest.url) {
+        const snapshotUrl = closest.url
+          .replace(/^http:\/\//i, 'https://')
+          .replace(/^(https?:\/\/web\.archive\.org\/web\/\d+)\/(https?:\/\/)/i, '$1id_/$2')
+        const fromSnap = await tryHtml(snapshotUrl, 'wbavail', 6000)
+        if (fromSnap) return fromSnap
+      } else {
+        notes.push('wbavail:none')
+      }
+    } else {
+      notes.push(`wbavail:${available.status}`)
+    }
+  } catch {
+    notes.push('wbavail:error')
+  }
+
+  return { candidates: [], images: [], debug: notes.join('|') || 'anf:empty' }
 }
 
 async function previewViaWayback(target: string): Promise<{
@@ -777,11 +876,21 @@ export async function previewLink(target: string): Promise<{
   description?: string
   images: string[]
   candidates: string[]
+  debug?: string
+  revision?: string
 }> {
   const url = publicUrl(target)
   const cacheKey = `preview:${canonicalPreviewUrl(url.href)}`
   const cached = cacheGet(cacheKey)
-  if (cached) return cached
+  if (cached) return { ...cached, revision: LINK_PREVIEW_REVISION, debug: 'cache' }
+
+  // Known bot-walled retailers: never hit live (403) or the heavy multi-fetch Wayback path.
+  // Edge isolates die (HTTP 546) on 400KB HTML + many regexes; use the lite Range path only.
+  if (blockedRetailHost(url.href)) {
+    const lite = await previewAbercrombieLite(url.href)
+    if (lite.candidates.length) cacheSet(cacheKey, lite)
+    return { ...lite, revision: LINK_PREVIEW_REVISION }
+  }
 
   let parsed: {
     title?: string
@@ -790,39 +899,33 @@ export async function previewLink(target: string): Promise<{
     candidates: string[]
   } = { candidates: [], images: [] }
 
-  const host = url.hostname.toLowerCase()
-  const blockedRetailer = /(^|\.)abercrombie\.com$|(^|\.)hollisterco\.com$/i.test(host)
-
-  // Known bot-walled retailers: skip the doomed live fetch and go straight to Wayback.
-  if (!blockedRetailer) {
-    try {
-      const response = await fetch(url, {
-        redirect: 'follow',
-        headers: { 'User-Agent': UA, Accept: 'text/html,application/xhtml+xml' },
-        signal: AbortSignal.timeout(8000),
-      })
-      const finalUrl = publicUrl(response.url || url.href).href
-      const html = await readResponseText(response, MAX_HTML)
-      if (response.ok) {
-        parsed = previewFromHtml(html, finalUrl)
-      }
-    } catch {
-      /* fall through to Wayback */
+  try {
+    const response = await fetch(url, {
+      redirect: 'follow',
+      headers: { 'User-Agent': UA, Accept: 'text/html,application/xhtml+xml' },
+      signal: AbortSignal.timeout(8000),
+    })
+    const finalUrl = publicUrl(response.url || url.href).href
+    const html = await readResponseText(response, MAX_HTML)
+    if (response.ok) {
+      parsed = previewFromHtml(html, finalUrl)
     }
+  } catch {
+    /* fall through to Wayback */
+  }
 
-    if (parsed.candidates.length) {
-      cacheSet(cacheKey, parsed)
-      return parsed
-    }
+  if (parsed.candidates.length) {
+    cacheSet(cacheKey, parsed)
+    return { ...parsed, revision: LINK_PREVIEW_REVISION }
   }
 
   const archived = await previewViaWayback(url.href)
   if (archived?.candidates.length) {
     cacheSet(cacheKey, archived)
-    return archived
+    return { ...archived, revision: LINK_PREVIEW_REVISION }
   }
 
-  return parsed
+  return { ...parsed, revision: LINK_PREVIEW_REVISION }
 }
 
 export async function fetchPreviewImage(target: string): Promise<{ body: Uint8Array; type: string }> {

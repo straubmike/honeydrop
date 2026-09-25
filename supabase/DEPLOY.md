@@ -16,6 +16,17 @@ npm run deploy:device-link
 
 `link-api` must stay within Supabase edge isolate limits (~2s CPU / ~250MB). If live paste returns empty after a few seconds, check the function response for HTTP **546** `WORKER_RESOURCE_LIMIT` — that means the edge worker OOM’d/CPU-tripped (not a missing deploy). Redeploy after fixing; do not rely on VPS cron for edge.
 
+**Abercrombie / Hollister:** edge uses a Range-capped Wayback + Scene7 `KIC_` path (`revision: "anf-lite-2"` in the JSON). After deploy, confirm with:
+
+```bash
+npm run verify:anf-edge   # local Deno check (optional)
+ANF='https://www.abercrombie.com/shop/us/p/a-and-f-marina-one-piece-swimsuit-62240356'
+curl -sS -w '\nHTTP %{http_code}\n' \
+  "https://nfrylscqcfokveumyzdb.supabase.co/functions/v1/link-api?op=link-preview&url=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1], safe=''))" "$ANF")"
+```
+
+Expect HTTP **200**, `"revision":"anf-lite-2"`, and `candidates` containing `img.abercrombie.com` / `KIC_…`. If you still see **546** or no `revision`, the new edge code is **not** live yet — run `npm run deploy:link-api` again.
+
 Then push app code so the VPS rebuilds (or wait for the minute cron after push).
 
 8. On the VPS build host, set:
