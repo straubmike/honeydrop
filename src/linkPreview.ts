@@ -71,28 +71,34 @@ export function previewPairUrls(candidates: string[], startIndex = 0): string[] 
   return first === second ? [first] : [first, second]
 }
 
-/** Preview fetch list — single file for direct media URLs, otherwise up to two gallery shots. */
+/**
+ * Preview fetch list — direct media = one file; otherwise exactly the next pair
+ * of gallery shots (max 2). Abercrombie candidates are ordered colorway-first so
+ * the first pair often spans two patterns; "See more" advances by pairs through
+ * the full scraped set (shared via previewIndex on the board item).
+ */
 export function previewFetchUrls(pageUrl: string, candidates: string[], startIndex = 0): string[] {
   if (isDirectMediaUrl(pageUrl)) return [pageUrl]
   return previewPairUrls(candidates, startIndex)
 }
 
 export async function fetchPreviewFiles(imageUrls: string[]): Promise<File[]> {
-  const files: File[] = []
   const headers = await linkApiHeaders()
-  for (const imageUrl of imageUrls) {
-    try {
-      const image = await fetch(linkApiUrl('link-image', imageUrl), { headers })
-      if (!image.ok) continue
-      const blob = await image.blob()
-      if (blob.size < 80) continue
-      const subtype = (blob.type.split('/')[1] || 'jpeg').replace('jpeg', 'jpg')
-      files.push(new File([blob], `preview.${subtype}`, { type: blob.type || 'image/jpeg' }))
-    } catch {
-      /* skip a missing image and keep the rest */
-    }
-  }
-  return files
+  const results = await Promise.all(
+    imageUrls.map(async (imageUrl) => {
+      try {
+        const image = await fetch(linkApiUrl('link-image', imageUrl), { headers })
+        if (!image.ok) return null
+        const blob = await image.blob()
+        if (blob.size < 80) return null
+        const subtype = (blob.type.split('/')[1] || 'jpeg').replace('jpeg', 'jpg')
+        return new File([blob], `preview.${subtype}`, { type: blob.type || 'image/jpeg' })
+      } catch {
+        return null
+      }
+    }),
+  )
+  return results.filter((file): file is File => Boolean(file))
 }
 
 export async function fetchLinkPreview(pageUrl: string): Promise<LinkPreview> {
