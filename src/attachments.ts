@@ -25,6 +25,16 @@ export function itemMediaAttachments(item: Item): Attachment[] {
   return itemAttachments(item).filter((part) => part.type !== 'link')
 }
 
+/** Scraped/cycled link faceouts — belong in the preview strip only. */
+export function itemPreviewMedia(item: Item): Attachment[] {
+  return itemMediaAttachments(item).filter((part) => part.source === 'preview')
+}
+
+/** User-uploaded photos/videos — never mix into the preview strip. */
+export function itemUserMedia(item: Item): Attachment[] {
+  return itemMediaAttachments(item).filter((part) => part.source !== 'preview')
+}
+
 export function itemLinkAttachments(item: Item): Attachment[] {
   return itemAttachments(item).filter((part) => part.type === 'link')
 }

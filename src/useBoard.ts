@@ -719,15 +719,21 @@ export function useApp() {
               ...collection,
               updatedAt: new Date().toISOString(),
               items: collection.items.map((item) => {
-                if (item.id !== itemId || !isMediaItem(item)) return item
+                if (item.id !== itemId) return item
+                if (!isMediaItem(item) && item.type !== 'link') return item
                 const current = itemAttachments(item)
                 const links = current.filter((part) => part.type === 'link')
                 const media = itemMediaAttachments(item)
+                const nextAttachments = [...media, ...attachments, ...links]
+                // Link drops keep type "link"; media drops refresh type from first media part.
+                if (item.type === 'link') {
+                  return { ...item, attachments: nextAttachments }
+                }
                 const type = media[0]?.type ?? attachments[0]!.type
                 return {
                   ...item,
                   type,
-                  attachments: [...media, ...attachments, ...links],
+                  attachments: nextAttachments,
                 }
               }),
             }
@@ -753,10 +759,11 @@ export function useApp() {
               ...collection,
               updatedAt: new Date().toISOString(),
               items: collection.items.map((item) => {
-                if (item.id !== itemId || item.type !== 'link') return item
+                if (item.id !== itemId) return item
+                if (!isMediaItem(item) && item.type !== 'link') return item
                 const current = itemAttachments(item)
                 const known = new Set([
-                  item.content,
+                  ...(item.type === 'link' ? [item.content] : []),
                   ...current.filter((part) => part.type === 'link').map((part) => part.content),
                 ])
                 if (known.has(url)) return item
