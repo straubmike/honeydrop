@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ClipboardEvent, type FormEvent, type PointerEvent as ReactPointerEvent } from 'react'
-import { isMediaItem, isCollectionCoverPreview, itemLinkAttachments, itemMediaAttachments } from '../attachments'
+import { isMediaItem, isCollectionCoverPreview, itemLinkAttachments, itemPreviewMedia, itemUserMedia } from '../attachments'
 import { relativeTime } from '../dates'
 import {
   classifyMedia,
@@ -160,7 +160,9 @@ export function ItemCard({
   const [importDraft, setImportDraft] = useState('')
   const [importBusy, setImportBusy] = useState(false)
   const addMenuRef = useRef<HTMLDivElement>(null)
-  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null)
+  const [lightbox, setLightbox] = useState<{ kind: 'preview' | 'attached'; index: number } | null>(
+    null,
+  )
   const [cycling, setCycling] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
   const skipTextBlur = useRef(false)
@@ -176,29 +178,38 @@ export function ItemCard({
     })()
   }
   const mine = item.authorUserId === currentUserId
-  const media = itemMediaAttachments(item)
+  const previewMedia = itemPreviewMedia(item)
+  const userMedia = itemUserMedia(item)
   const extraLinks = itemLinkAttachments(item)
   const previewCandidates = item.previewCandidates ?? []
-  // Prefer attachment lightbox once the user has added their own photos/videos to a link drop.
-  const hasUserMedia = media.some((part) => part.source !== 'preview')
-  const lightboxUsesCandidates =
-    item.type === 'link' && previewCandidates.length > 0 && !hasUserMedia
-  const lightboxSlides = useMemo<LightboxSlide[]>(() => {
+  const lightboxUsesCandidates = item.type === 'link' && previewCandidates.length > 0
+  const previewLightboxSlides = useMemo<LightboxSlide[]>(() => {
     if (lightboxUsesCandidates) {
       return previewCandidates.map((url) => ({ kind: 'url', url }))
     }
-    return media.map((attachment) => ({ kind: 'attachment', attachment }))
-  }, [lightboxUsesCandidates, media, previewCandidates])
+    return previewMedia.map((attachment) => ({ kind: 'attachment', attachment }))
+  }, [lightboxUsesCandidates, previewMedia, previewCandidates])
+  const attachedLightboxSlides = useMemo<LightboxSlide[]>(
+    () => userMedia.map((attachment) => ({ kind: 'attachment', attachment })),
+    [userMedia],
+  )
   const canCrossAdd = isMediaItem(item) || item.type === 'link'
 
-  const openLightboxAt = (mediaIndex: number) => {
+  const openPreviewLightbox = (mediaIndex: number) => {
     if (lightboxUsesCandidates) {
       const base = item.previewIndex ?? 0
-      setLightboxIndex((base + mediaIndex) % previewCandidates.length)
+      setLightbox({ kind: 'preview', index: (base + mediaIndex) % previewCandidates.length })
       return
     }
-    setLightboxIndex(mediaIndex)
+    setLightbox({ kind: 'preview', index: mediaIndex })
   }
+
+  const openAttachedLightbox = (mediaIndex: number) => {
+    setLightbox({ kind: 'attached', index: mediaIndex })
+  }
+
+  const lightboxSlides = lightbox?.kind === 'attached' ? attachedLightboxSlides : previewLightboxSlides
+  const lightboxIndex = lightbox?.index ?? null
 
   const currentLightboxSlide =
     lightboxIndex !== null ? lightboxSlides[lightboxIndex] ?? null : null
@@ -220,8 +231,10 @@ export function ItemCard({
   const isCollectionCover =
     coverForCurrentSlide != null &&
     isCollectionCoverPreview(collectionCoverPreview, item.id, coverForCurrentSlide)
-  const showCaption = media.length > 0 || item.type === 'link'
+  const showCaption = previewMedia.length > 0 || userMedia.length > 0 || item.type === 'link'
   const canSeeMore = item.type === 'link' && (item.previewCandidates?.length ?? 0) > 2
+  // Cross-added user media stacks below the original card body (never in the preview strip).
+  const attachedMediaRows = isMediaItem(item) ? userMedia.slice(1) : userMedia
   const drawing = item.type === 'drawing' ? parseDrawing(item.content) : null
   const list = item.type === 'list' ? parseList(item.content) : null
   const listTotal = list ? sumMoney(list) : 0
@@ -382,24 +395,24 @@ export function ItemCard({
         ) : null}
       </header>
 
-      {media.length ? (
-        <div className="item__media-block">
-          <div className={media.length > 1 ? 'media-grid' : 'media-single'}>
-            {media.map((part, mediaIndex) => (
+      {previewMedia.length ? (
+        <div className="item__media-block item__media-block--preview">
+          <div className={previewMedia.length > 1 ? 'media-grid' : 'media-single'}>
+            {previewMedia.map((part, mediaIndex) => (
               <MediaPart
                 key={part.id}
                 attachment={part}
-                onOpen={() => openLightboxAt(mediaIndex)}
+                onOpen={() => openPreviewLightbox(mediaIndex)}
                 onRemove={mine ? () => onRemoveFile(part.id) : undefined}
               />
             ))}
           </div>
-          {lightboxIndex !== null ? (
+          {lightbox?.kind === 'preview' && lightboxIndex !== null ? (
             <MediaLightbox
-              slides={lightboxSlides}
+              slides={previewLightboxSlides}
               index={lightboxIndex}
-              onClose={() => setLightboxIndex(null)}
-              onIndexChange={setLightboxIndex}
+              onClose={() => setLightbox(null)}
+              onIndexChange={(index) => setLightbox({ kind: 'preview', index })}
               isCollectionCover={isCollectionCover}
               onSetCollectionCover={
                 coverForCurrentSlide
@@ -431,6 +444,33 @@ export function ItemCard({
         </div>
       ) : null}
 
+      {/* Media drops: first user photo/video is the original card body. */}
+      {isMediaItem(item) && userMedia[0] ? (
+        <div className="item__media-block">
+          <div className="media-single">
+            <MediaPart
+              attachment={userMedia[0]}
+              onOpen={() => openAttachedLightbox(0)}
+              onRemove={mine ? () => onRemoveFile(userMedia[0]!.id) : undefined}
+            />
+          </div>
+          {lightbox?.kind === 'attached' && lightboxIndex !== null ? (
+            <MediaLightbox
+              slides={attachedLightboxSlides}
+              index={lightboxIndex}
+              onClose={() => setLightbox(null)}
+              onIndexChange={(index) => setLightbox({ kind: 'attached', index })}
+              isCollectionCover={isCollectionCover}
+              onSetCollectionCover={
+                coverForCurrentSlide
+                  ? () => onSetCollectionCover(coverForCurrentSlide)
+                  : undefined
+              }
+            />
+          ) : null}
+        </div>
+      ) : null}
+
       {item.type === 'link' || extraLinks.length > 0 ? (
         <div className="item__links">
           {item.type === 'link' ? <LinkChip url={item.content} /> : null}
@@ -446,6 +486,37 @@ export function ItemCard({
 
       {showCaption ? (
         <CaptionEditor value={item.caption} placeholder="Add a caption" onSave={onCaption} />
+      ) : null}
+
+      {attachedMediaRows.length ? (
+        <div className="item__attached">
+          {attachedMediaRows.map((part, rowIndex) => {
+            const lightboxIdx = isMediaItem(item) ? rowIndex + 1 : rowIndex
+            return (
+              <div key={part.id} className="item__attached-row">
+                <MediaPart
+                  attachment={part}
+                  onOpen={() => openAttachedLightbox(lightboxIdx)}
+                  onRemove={mine ? () => onRemoveFile(part.id) : undefined}
+                />
+              </div>
+            )
+          })}
+          {lightbox?.kind === 'attached' && lightboxIndex !== null && !isMediaItem(item) ? (
+            <MediaLightbox
+              slides={attachedLightboxSlides}
+              index={lightboxIndex}
+              onClose={() => setLightbox(null)}
+              onIndexChange={(index) => setLightbox({ kind: 'attached', index })}
+              isCollectionCover={isCollectionCover}
+              onSetCollectionCover={
+                coverForCurrentSlide
+                  ? () => onSetCollectionCover(coverForCurrentSlide)
+                  : undefined
+              }
+            />
+          ) : null}
+        </div>
       ) : null}
 
       {item.type === 'drawing' ? (

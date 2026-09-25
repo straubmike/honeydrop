@@ -1374,6 +1374,28 @@ body.is-dragging .ideas--compact {
   gap: 0.35rem;
 }
 
+.item__attached {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  margin-top: 0.55rem;
+  padding-top: 0.55rem;
+  border-top: 1px solid var(--line);
+}
+
+.item__attached-row {
+  min-width: 0;
+}
+
+.item__attached-row .polaroid {
+  width: 100%;
+}
+
+.item__attached-row .polaroid img,
+.item__attached-row .polaroid video {
+  max-height: 220px;
+}
+
 .item__preview-nav {
   display: flex;
   justify-content: space-between;
