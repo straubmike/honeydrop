@@ -64,7 +64,7 @@ export function isStoredMedia(content: string): boolean {
 export async function resolveMediaBlob(content: string, id: string): Promise<Blob | undefined> {
   if (isSupabaseMedia(content)) return downloadBoardMedia(content)
   if (isPendingMedia(content)) return getPendingMediaBlob(pendingMediaId(content))
-  if (isIdbMedia(content)) return getMedia(id)
+  if (isIdbMedia(content)) return getMedia(content.slice(4) || id)
   return undefined
 }
 
@@ -85,5 +85,5 @@ export async function removeStoredMedia(content: string, id: string): Promise<vo
     }
     return
   }
-  if (isIdbMedia(content)) await deleteMedia(id)
+  if (isIdbMedia(content)) await deleteMedia(content.slice(4) || id)
 }

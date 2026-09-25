@@ -30,6 +30,7 @@ function scoreFallbackImage(url: string): number {
   const lower = url.toLowerCase()
   let score = 4
   if (/\/seo\//.test(lower)) score += 20
+  if (/img\.abercrombie\.com\/is\/image\/anf\/kic_/i.test(lower)) score += 22
   if (/\/asr\//.test(lower) || /\/products?\//.test(lower) || /\/files\//.test(lower)) score += 14
   if (/odnheight=(?:117|160|320)|odnwidth=(?:117|160|320)/.test(lower)) score -= 30
   if (looksLikeJunk(lower)) score -= 40
@@ -44,7 +45,8 @@ function rankImageUrls(urls: string[]): string[] {
     .filter(
       (url) =>
         /\.(avif|bmp|gif|jpe?g|png|webp)(?:$|\?)/i.test(url) ||
-        /\/(seo|asr|images?|media|photos?|cdn|static|uploads?|files|products?)\//i.test(url),
+        /\/(seo|asr|images?|media|photos?|cdn|static|uploads?|files|products?)\//i.test(url) ||
+        /img\.abercrombie\.com\/is\/image\//i.test(url),
     )
     .filter((url) => !looksLikeJunk(url))
     .map((url) => ({ url, score: scoreFallbackImage(url) }))
