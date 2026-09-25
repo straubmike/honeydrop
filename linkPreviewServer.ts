@@ -542,38 +542,73 @@ async function previewViaWayback(target: string): Promise<{
   images: string[]
   candidates: string[]
 } | null> {
-  const candidates = [canonicalPreviewUrl(target), target].filter(
+  const pageUrls = [canonicalPreviewUrl(target), target].filter(
     (value, index, list) => list.indexOf(value) === index,
   )
-  for (const candidate of candidates) {
+
+  const snapshotUrls: string[] = []
+  for (const pageUrl of pageUrls) {
     try {
       const available = await fetch(
-        `https://archive.org/wayback/available?url=${encodeURIComponent(candidate)}`,
+        `https://archive.org/wayback/available?url=${encodeURIComponent(pageUrl)}`,
         { signal: AbortSignal.timeout(8000) },
       )
-      if (!available.ok) continue
-      const payload = (await available.json()) as {
-        archived_snapshots?: { closest?: { available?: boolean; url?: string; timestamp?: string } }
+      if (available.ok) {
+        const payload = (await available.json()) as {
+          archived_snapshots?: { closest?: { available?: boolean; url?: string } }
+        }
+        const closest = payload.archived_snapshots?.closest
+        if (closest?.available && closest.url) {
+          snapshotUrls.push(closest.url.replace(/^http:\/\//i, 'https://'))
+        }
       }
-      const closest = payload.archived_snapshots?.closest
-      if (!closest?.available || !closest.url) continue
-      const snapshotUrl = closest.url.replace(/^http:\/\//i, 'https://')
-      const rawUrl = snapshotUrl.replace(
-        /^(https?:\/\/web\.archive\.org\/web\/\d+)\/(https?:\/\/)/i,
-        '$1id_/$2',
-      )
-      const response = await fetch(rawUrl, {
-        redirect: 'follow',
-        headers: { 'User-Agent': UA, Accept: 'text/html,application/xhtml+xml' },
-        signal: AbortSignal.timeout(20000),
-      })
-      if (!response.ok) continue
-      const buffer = Buffer.from(await response.arrayBuffer())
-      const html = buffer.subarray(0, MAX_HTML).toString('utf8')
-      const parsed = previewFromHtml(html, canonicalPreviewUrl(target))
-      if (parsed.candidates.length) return parsed
     } catch {
-      /* try next candidate URL */
+      /* try CDX below */
+    }
+
+    try {
+      const cdx = await fetch(
+        `https://web.archive.org/cdx/search/cdx?url=${encodeURIComponent(pageUrl.replace(/^https?:\/\//i, ''))}&output=json&filter=statuscode:200&fl=timestamp&limit=6`,
+        { signal: AbortSignal.timeout(10000) },
+      )
+      if (cdx.ok) {
+        const rows = (await cdx.json()) as string[][]
+        for (const row of rows.slice(1)) {
+          const ts = row[0]
+          if (!ts) continue
+          snapshotUrls.push(
+            `https://web.archive.org/web/${ts}/https://${pageUrl.replace(/^https?:\/\//i, '')}`,
+          )
+        }
+      }
+    } catch {
+      /* ignore CDX failures */
+    }
+  }
+
+  const uniqueSnapshots = [...new Set(snapshotUrls)]
+  for (const snapshotUrl of uniqueSnapshots) {
+    const variants = [
+      snapshotUrl.replace(/^(https?:\/\/web\.archive\.org\/web\/\d+)\/(https?:\/\/)/i, '$1id_/$2'),
+      snapshotUrl,
+    ].filter((value, index, list) => list.indexOf(value) === index)
+
+    for (const rawUrl of variants) {
+      try {
+        const response = await fetch(rawUrl, {
+          redirect: 'follow',
+          headers: { 'User-Agent': UA, Accept: 'text/html,application/xhtml+xml' },
+          signal: AbortSignal.timeout(20000),
+        })
+        const buffer = Buffer.from(await response.arrayBuffer())
+        const html = buffer.subarray(0, MAX_HTML).toString('utf8')
+        // Wayback sometimes returns HTTP 5xx with a usable archived body (or an error shell).
+        if (!/og:image|KIC_|application\/ld\+json|__NEXT_DATA__/i.test(html)) continue
+        const parsed = previewFromHtml(html, canonicalPreviewUrl(target))
+        if (parsed.candidates.length) return parsed
+      } catch {
+        /* try next snapshot variant */
+      }
     }
   }
   return null

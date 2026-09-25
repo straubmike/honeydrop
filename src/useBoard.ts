@@ -18,9 +18,10 @@ import { claimSeatRecoveryCode, createSeatRecoveryCode } from './api/seatRecover
 import { clearItemMedia, isMediaItem, itemAttachments, itemMediaAttachments, clearCoverIfStale } from './attachments'
 import { uid } from './dates'
 import { classifyMedia, MAX_MEDIA_BYTES, normalizeUrl } from './images'
+import { createInviteCode } from './lib/inviteCode'
 import { isSupabaseConfigured } from './lib/supabase'
 import { fetchPreviewFiles, previewPairUrls } from './linkPreview'
-import { isStoredMedia, removeStoredMedia } from './mediaStore'
+import { isStoredMedia, putMedia, removeStoredMedia } from './mediaStore'
 import {
   cacheAppSnapshot,
   clearPersistQueueItem,
@@ -36,6 +37,7 @@ import {
 } from './offlineStore'
 import { nextPin, resolvePin } from './pins'
 import { withDevSampleLocations } from './seed'
+import { loadApp, saveApp } from './storage'
 import type {
   AppState,
   Attachment,
@@ -67,18 +69,23 @@ async function filesToAttachments(
     if (!kind) continue
     const id = uid()
     let content: string
-    try {
-      if (!isBrowserOnline()) throw new Error('offline')
-      content = await uploadBoardMedia(boardId, id, file, file.type)
-    } catch {
-      await putPendingMedia({
-        id,
-        boardId,
-        mime: file.type,
-        source: source === 'preview' ? 'preview' : 'upload',
-        blob: file,
-      })
-      content = pendingMediaRef(id)
+    if (!isSupabaseConfigured) {
+      await putMedia(id, file)
+      content = `idb:${id}`
+    } else {
+      try {
+        if (!isBrowserOnline()) throw new Error('offline')
+        content = await uploadBoardMedia(boardId, id, file, file.type)
+      } catch {
+        await putPendingMedia({
+          id,
+          boardId,
+          mime: file.type,
+          source: source === 'preview' ? 'preview' : 'upload',
+          blob: file,
+        })
+        content = pendingMediaRef(id)
+      }
     }
     attachments.push({
       id,
@@ -281,9 +288,13 @@ export function useApp() {
     let cancelled = false
     void (async () => {
       if (!isSupabaseConfigured) {
-        setBootError(
-          'Supabase is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to your environment, then rebuild.',
-        )
+        const local = loadApp()
+        if (cancelled) return
+        skipPersistRef.current = true
+        setState(local)
+        setBootError(null)
+        setSyncStatus('offline')
+        setSyncMessage('Local demo mode — data stays in this browser')
         setReady(true)
         return
       }
@@ -346,7 +357,19 @@ export function useApp() {
 
   useEffect(() => {
     if (!ready || !state.userId) return
-    void cacheAppSnapshot(state)
+    if (isSupabaseConfigured) {
+      void cacheAppSnapshot(state)
+      return
+    }
+    try {
+      saveApp(state)
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'QuotaExceededError') {
+        window.alert('The board is out of local storage space. Try a smaller image.')
+      } else {
+        console.error('Failed to save local demo board', error)
+      }
+    }
   }, [ready, state])
   useEffect(() => {
     if (!ready || skipPersistRef.current) {
@@ -431,9 +454,25 @@ export function useApp() {
 
   const createBoard = useCallback(
     async (title: string) => {
-      if (!isSupabaseConfigured) return null
       setBusy(true)
       try {
+        if (!isSupabaseConfigured) {
+          const now = new Date().toISOString()
+          const boardId = uid()
+          const trimmed = title.trim() || 'Ours'
+          const board: IdeaBoard = {
+            id: boardId,
+            title: trimmed,
+            createdAt: now,
+            updatedAt: now,
+            inviteCode: createInviteCode(),
+            members: [{ userId: state.userId, name: state.displayName.trim() || 'You' }],
+            collections: [],
+          }
+          setState((prev) => ({ ...prev, boards: [board, ...prev.boards] }))
+          setActiveBoardId(boardId)
+          return boardId
+        }
         const boardId = await createRemoteBoard(title, state.displayName)
         const board = await fetchBoard(boardId)
         if (!board) throw new Error('Created board could not be loaded')
@@ -445,7 +484,7 @@ export function useApp() {
         setBusy(false)
       }
     },
-    [state.displayName],
+    [state.displayName, state.userId],
   )
 
   const joinBoard = useCallback(
