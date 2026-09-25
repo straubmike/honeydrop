@@ -337,27 +337,27 @@ function abercrombieProductImages(html: string, pageUrl = ''): ImageCandidate[] 
     })
 
   const found: ImageCandidate[] = []
-  // Pass 1: one faceout per colorway so every pattern is reachable early (See more / multi-thumb).
-  bases.forEach((base, colorIndex) => {
-    const face = sortShots(byBase.get(base)!)[0]
-    if (!face) return
+  // Group by colorway in pairs so "See more" (steps by 2) advances one color at a time:
+  // pair 0 = default/OG colorway, pair 1 = next colorway (coffee stripe for Marina), etc.
+  let index = 0
+  const pushShot = (shot: Shot) => {
     found.push({
-      url: `https://img.abercrombie.com/is/image/anf/${face.name}?policy=product-large`,
+      url: `https://img.abercrombie.com/is/image/anf/${shot.name}?policy=product-large`,
       kind: 'gallery',
-      index: colorIndex,
+      index: index++,
     })
-  })
-  // Pass 2: remaining shots, grouped by colorway.
-  bases.forEach((base, colorIndex) => {
+  }
+
+  for (const base of bases) {
     const shots = sortShots(byBase.get(base)!)
-    shots.slice(1).forEach((shot, shotIndex) => {
-      found.push({
-        url: `https://img.abercrombie.com/is/image/anf/${shot.name}?policy=product-large`,
-        kind: 'gallery',
-        index: 100 + colorIndex * 20 + shotIndex,
-      })
-    })
-  })
+    // Lead with two faceouts for this colorway (model1+model2 when available).
+    const lead = shots.slice(0, 2)
+    for (const shot of lead) pushShot(shot)
+  }
+  for (const base of bases) {
+    const shots = sortShots(byBase.get(base)!)
+    for (const shot of shots.slice(2)) pushShot(shot)
+  }
   return found
 }
 
