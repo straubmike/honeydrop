@@ -109,21 +109,22 @@ export function previewFetchUrls(pageUrl: string, candidates: string[], startInd
 }
 
 export async function fetchPreviewFiles(imageUrls: string[]): Promise<File[]> {
-  const files: File[] = []
   const headers = await linkApiHeaders()
-  for (const imageUrl of imageUrls) {
-    try {
-      const image = await fetch(linkApiUrl('link-image', imageUrl), { headers })
-      if (!image.ok) continue
-      const blob = await image.blob()
-      if (blob.size < 80) continue
-      const subtype = (blob.type.split('/')[1] || 'jpeg').replace('jpeg', 'jpg')
-      files.push(new File([blob], `preview.${subtype}`, { type: blob.type || 'image/jpeg' }))
-    } catch {
-      /* skip a missing image and keep the rest */
-    }
-  }
-  return files
+  const results = await Promise.all(
+    imageUrls.map(async (imageUrl) => {
+      try {
+        const image = await fetch(linkApiUrl('link-image', imageUrl), { headers })
+        if (!image.ok) return null
+        const blob = await image.blob()
+        if (blob.size < 80) return null
+        const subtype = (blob.type.split('/')[1] || 'jpeg').replace('jpeg', 'jpg')
+        return new File([blob], `preview.${subtype}`, { type: blob.type || 'image/jpeg' })
+      } catch {
+        return null
+      }
+    }),
+  )
+  return results.filter((file): file is File => Boolean(file))
 }
 
 export async function fetchLinkPreview(pageUrl: string): Promise<LinkPreview> {

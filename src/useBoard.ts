@@ -294,8 +294,11 @@ export function useApp() {
         setState(local)
         setBootError(null)
         setSyncStatus('offline')
-        setSyncMessage('Local demo mode — data stays in this browser')
+        setSyncMessage(null)
         setReady(true)
+        console.info(
+          '[honeydrop] LOCAL DEMO MODE — no VITE_SUPABASE_* keys. Sample data only; not the live database.',
+        )
         return
       }
       try {

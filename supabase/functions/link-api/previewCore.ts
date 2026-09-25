@@ -597,81 +597,103 @@ function canonicalPreviewUrl(target: string): string {
   }
 }
 
+const previewCache = new Map<string, { expires: number; value: Awaited<ReturnType<typeof previewFromHtml>> }>()
+const PREVIEW_CACHE_TTL_MS = 30 * 60 * 1000
+
+function cacheGet(key: string) {
+  const hit = previewCache.get(key)
+  if (!hit) return null
+  if (Date.now() > hit.expires) {
+    previewCache.delete(key)
+    return null
+  }
+  return hit.value
+}
+
+function cacheSet(key: string, value: Awaited<ReturnType<typeof previewFromHtml>>) {
+  if (!value.candidates.length) return
+  previewCache.set(key, { expires: Date.now() + PREVIEW_CACHE_TTL_MS, value })
+}
+
+async function fetchHtml(url: string, timeoutMs: number): Promise<string | null> {
+  try {
+    const response = await fetch(url, {
+      redirect: 'follow',
+      headers: { 'User-Agent': UA, Accept: 'text/html,application/xhtml+xml' },
+      signal: AbortSignal.timeout(timeoutMs),
+    })
+    const buffer = new Uint8Array(await response.arrayBuffer())
+  const html = new TextDecoder().decode(buffer.subarray(0, MAX_HTML))
+    if (!/og:image|KIC_|application\/ld\+json|__NEXT_DATA__/i.test(html)) return null
+    return html
+  } catch {
+    return null
+  }
+}
+
 async function previewViaWayback(target: string): Promise<{
   title?: string
   description?: string
   images: string[]
   candidates: string[]
 } | null> {
-  const pageUrls = [canonicalPreviewUrl(target), target].filter(
-    (value, index, list) => list.indexOf(value) === index,
-  )
+  const canonical = canonicalPreviewUrl(target)
+  const cached = cacheGet(`wb:${canonical}`)
+  if (cached) return cached
 
-  const snapshotUrls: string[] = []
-  for (const pageUrl of pageUrls) {
-    try {
-      const available = await fetch(
-        `https://archive.org/wayback/available?url=${encodeURIComponent(pageUrl)}`,
-        { signal: AbortSignal.timeout(8000) },
-      )
-      if (available.ok) {
-        const payload = (await available.json()) as {
-          archived_snapshots?: { closest?: { available?: boolean; url?: string } }
-        }
-        const closest = payload.archived_snapshots?.closest
-        if (closest?.available && closest.url) {
-          snapshotUrls.push(closest.url.replace(/^http:\/\//i, 'https://'))
-        }
-      }
-    } catch {
-      /* try CDX below */
-    }
+  // Fast path: Wayback "latest" snapshot (skip CDX — it often hangs ~10s+).
+  const quickHtml =
+    (await fetchHtml(`https://web.archive.org/web/2/${canonical}`, 7000)) ||
+    (await fetchHtml(`https://web.archive.org/web/2id_/${canonical}`, 5000))
 
-    try {
-      const cdx = await fetch(
-        `https://web.archive.org/cdx/search/cdx?url=${encodeURIComponent(pageUrl.replace(/^https?:\/\//i, ''))}&output=json&filter=statuscode:200&fl=timestamp&limit=6`,
-        { signal: AbortSignal.timeout(10000) },
-      )
-      if (cdx.ok) {
-        const rows = (await cdx.json()) as string[][]
-        for (const row of rows.slice(1)) {
-          const ts = row[0]
-          if (!ts) continue
-          snapshotUrls.push(
-            `https://web.archive.org/web/${ts}/https://${pageUrl.replace(/^https?:\/\//i, '')}`,
-          )
-        }
-      }
-    } catch {
-      /* ignore CDX failures */
+  if (quickHtml) {
+    const parsed = previewFromHtml(quickHtml, canonical)
+    if (parsed.candidates.length) {
+      cacheSet(`wb:${canonical}`, parsed)
+      return parsed
     }
   }
 
-  const uniqueSnapshots = [...new Set(snapshotUrls)]
-  for (const snapshotUrl of uniqueSnapshots) {
-    const variants = [
-      snapshotUrl.replace(/^(https?:\/\/web\.archive\.org\/web\/\d+)\/(https?:\/\/)/i, '$1id_/$2'),
-      snapshotUrl,
-    ].filter((value, index, list) => list.indexOf(value) === index)
-
-    for (const rawUrl of variants) {
-      try {
-        const response = await fetch(rawUrl, {
-          redirect: 'follow',
-          headers: { 'User-Agent': UA, Accept: 'text/html,application/xhtml+xml' },
-          signal: AbortSignal.timeout(20000),
-        })
-        const buffer = new Uint8Array(await response.arrayBuffer())
-  const html = new TextDecoder().decode(buffer.subarray(0, MAX_HTML))
-        // Wayback sometimes returns HTTP 5xx with a usable archived body (or an error shell).
-        if (!/og:image|KIC_|application\/ld\+json|__NEXT_DATA__/i.test(html)) continue
-        const parsed = previewFromHtml(html, canonicalPreviewUrl(target))
-        if (parsed.candidates.length) return parsed
-      } catch {
-        /* try next snapshot variant */
+  // Availability API → one concrete snapshot (short timeouts).
+  try {
+    const available = await fetch(
+      `https://archive.org/wayback/available?url=${encodeURIComponent(canonical)}`,
+      { signal: AbortSignal.timeout(4000) },
+    )
+    if (available.ok) {
+      const payload = (await available.json()) as {
+        archived_snapshots?: { closest?: { available?: boolean; url?: string } }
+      }
+      const closest = payload.archived_snapshots?.closest
+      if (closest?.available && closest.url) {
+        const snapshotUrl = closest.url.replace(/^http:\/\//i, 'https://')
+        const variants = [
+          snapshotUrl.replace(/^(https?:\/\/web\.archive\.org\/web\/\d+)\/(https?:\/\/)/i, '$1id_/$2'),
+          snapshotUrl,
+        ]
+        const html = await Promise.any(
+          variants.map(
+            (url) =>
+              new Promise<string>((resolve, reject) => {
+                void fetchHtml(url, 6000).then((body) =>
+                  body ? resolve(body) : reject(new Error('empty')),
+                )
+              }),
+          ),
+        ).catch(() => null)
+        if (html) {
+          const parsed = previewFromHtml(html, canonical)
+          if (parsed.candidates.length) {
+            cacheSet(`wb:${canonical}`, parsed)
+            return parsed
+          }
+        }
       }
     }
+  } catch {
+    /* give up on Wayback */
   }
+
   return null
 }
 
@@ -682,6 +704,10 @@ export async function previewLink(target: string): Promise<{
   candidates: string[]
 }> {
   const url = publicUrl(target)
+  const cacheKey = `preview:${canonicalPreviewUrl(url.href)}`
+  const cached = cacheGet(cacheKey)
+  if (cached) return cached
+
   let parsed: {
     title?: string
     description?: string
@@ -689,26 +715,38 @@ export async function previewLink(target: string): Promise<{
     candidates: string[]
   } = { candidates: [], images: [] }
 
-  try {
-    const response = await fetch(url, {
-      redirect: 'follow',
-      headers: { 'User-Agent': UA, Accept: 'text/html,application/xhtml+xml' },
-      signal: AbortSignal.timeout(8000),
-    })
-    const finalUrl = publicUrl(response.url || url.href).href
-    const buffer = new Uint8Array(await response.arrayBuffer())
+  const host = url.hostname.toLowerCase()
+  const blockedRetailer = /(^|\.)abercrombie\.com$|(^|\.)hollisterco\.com$/i.test(host)
+
+  // Known bot-walled retailers: skip the doomed live fetch and go straight to Wayback.
+  if (!blockedRetailer) {
+    try {
+      const response = await fetch(url, {
+        redirect: 'follow',
+        headers: { 'User-Agent': UA, Accept: 'text/html,application/xhtml+xml' },
+        signal: AbortSignal.timeout(8000),
+      })
+      const finalUrl = publicUrl(response.url || url.href).href
+      const buffer = new Uint8Array(await response.arrayBuffer())
   const html = new TextDecoder().decode(buffer.subarray(0, MAX_HTML))
-    if (response.ok) {
-      parsed = previewFromHtml(html, finalUrl)
+      if (response.ok) {
+        parsed = previewFromHtml(html, finalUrl)
+      }
+    } catch {
+      /* fall through to Wayback */
     }
-  } catch {
-    /* fall through to Wayback for bot-walled retailers */
+
+    if (parsed.candidates.length) {
+      cacheSet(cacheKey, parsed)
+      return parsed
+    }
   }
 
-  if (parsed.candidates.length) return parsed
-
   const archived = await previewViaWayback(url.href)
-  if (archived?.candidates.length) return archived
+  if (archived?.candidates.length) {
+    cacheSet(cacheKey, archived)
+    return archived
+  }
 
   return parsed
 }

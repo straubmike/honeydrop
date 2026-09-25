@@ -5,6 +5,9 @@ const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined
 
 export const isSupabaseConfigured = Boolean(url?.trim() && anonKey?.trim())
 
+/** True when live cloud keys are absent — local demo boards + Vite link previews only. */
+export const isDemoMode = !isSupabaseConfigured
+
 let client: SupabaseClient | null = null
 
 export function getSupabase(): SupabaseClient {

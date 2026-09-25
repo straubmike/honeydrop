@@ -9,6 +9,7 @@ import { IdeasView } from './components/IdeasView'
 import { InstallPrompt } from './components/InstallPrompt'
 import { InviteModal } from './components/InviteModal'
 import { SyncStatusBanner } from './components/SyncStatusBanner'
+import { DemoModeBanner } from './components/DemoModeBanner'
 import {
   boardPath,
   homePath,
@@ -226,7 +227,10 @@ export default function App() {
   }
 
   const syncBanner = (
-    <SyncStatusBanner status={app.syncStatus} message={app.syncMessage} />
+    <>
+      <DemoModeBanner />
+      <SyncStatusBanner status={app.syncStatus} message={app.syncMessage} />
+    </>
   )
 
   if (!app.ready) {
