@@ -1,6 +1,7 @@
 import {
   fetchPreviewImage,
   fetchRemoteMedia,
+  LINK_PREVIEW_REVISION,
   previewLink,
 } from './previewCore.ts'
 
@@ -179,8 +180,13 @@ async function previewLinkWithFallback(target: string) {
   const notes: string[] = []
   try {
     const direct = await previewLink(target)
-    if (direct.candidates.length) return direct
-    notes.push('direct:empty')
+    if (direct.candidates.length) {
+      return {
+        ...direct,
+        revision: direct.revision ?? LINK_PREVIEW_REVISION,
+      }
+    }
+    notes.push(direct.debug ? `direct:${direct.debug}` : 'direct:empty')
   } catch (error) {
     notes.push(`direct:${error instanceof Error ? error.message : 'error'}`)
   }
@@ -188,7 +194,12 @@ async function previewLinkWithFallback(target: string) {
   // ANF/Hollister never work via Jina/Microlink (403 / no images) and those
   // fallbacks burn the isolate's remaining CPU/memory after Wayback.
   if (blockedRetailHost(target)) {
-    return { candidates: [] as string[], images: [] as string[], fallback: notes.join('|') }
+    return {
+      candidates: [] as string[],
+      images: [] as string[],
+      fallback: notes.join('|'),
+      revision: LINK_PREVIEW_REVISION,
+    }
   }
 
   try {
@@ -200,6 +211,7 @@ async function previewLinkWithFallback(target: string) {
         description: undefined,
         candidates: jina.candidates,
         images: jina.images,
+        revision: LINK_PREVIEW_REVISION,
       }
     }
   } catch (error) {
@@ -215,13 +227,19 @@ async function previewLinkWithFallback(target: string) {
         description: undefined,
         candidates: micro.candidates,
         images: micro.images,
+        revision: LINK_PREVIEW_REVISION,
       }
     }
   } catch (error) {
     notes.push(`microlink:${error instanceof Error ? error.message : 'error'}`)
   }
 
-  return { candidates: [] as string[], images: [] as string[], fallback: notes.join('|') }
+  return {
+    candidates: [] as string[],
+    images: [] as string[],
+    fallback: notes.join('|'),
+    revision: LINK_PREVIEW_REVISION,
+  }
 }
 
 Deno.serve(async (req) => {
@@ -236,7 +254,18 @@ Deno.serve(async (req) => {
 
   try {
     if (op === 'link-preview') {
-      return json(200, await previewLinkWithFallback(target))
+      try {
+        return json(200, await previewLinkWithFallback(target))
+      } catch (error) {
+        // Prefer soft empty over 5xx so the app shows a clear miss instead of hanging;
+        // WORKER_RESOURCE_LIMIT (546) is platform-killed and cannot be caught here.
+        return json(200, {
+          candidates: [],
+          images: [],
+          revision: LINK_PREVIEW_REVISION,
+          fallback: `error:${error instanceof Error ? error.message : 'preview-failed'}`,
+        })
+      }
     }
     if (op === 'link-image') {
       try {
