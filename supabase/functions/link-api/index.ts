@@ -63,6 +63,41 @@ function rankImageUrls(urls: string[]): string[] {
   return candidates
 }
 
+async function readLimitedText(response: Response, maxBytes: number): Promise<string> {
+  const reader = response.body?.getReader()
+  if (!reader) {
+    const buffer = new Uint8Array(await response.arrayBuffer())
+    return new TextDecoder().decode(buffer.subarray(0, maxBytes))
+  }
+  const chunks: Uint8Array[] = []
+  let total = 0
+  while (total < maxBytes) {
+    const { done, value } = await reader.read()
+    if (done) break
+    if (!value?.byteLength) continue
+    const take = Math.min(value.byteLength, maxBytes - total)
+    chunks.push(take === value.byteLength ? value : value.subarray(0, take))
+    total += take
+    if (take < value.byteLength) break
+  }
+  void reader.cancel().catch(() => {})
+  const merged = new Uint8Array(total)
+  let offset = 0
+  for (const chunk of chunks) {
+    merged.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  return new TextDecoder().decode(merged)
+}
+
+function blockedRetailHost(target: string): boolean {
+  try {
+    return /(^|\.)abercrombie\.com$|(^|\.)hollisterco\.com$/i.test(new URL(target).hostname)
+  } catch {
+    return false
+  }
+}
+
 async function previewViaJina(target: string): Promise<{
   title?: string
   candidates: string[]
@@ -76,12 +111,13 @@ async function previewViaJina(target: string): Promise<{
       'User-Agent':
         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
     },
-    signal: AbortSignal.timeout(25000),
+    signal: AbortSignal.timeout(12000),
   })
   if (!response.ok) {
     return { candidates: [], images: [], note: `jina:${response.status}` }
   }
-  const text = await response.text()
+  // Cap markdown — unbounded jina bodies have tripped edge memory limits.
+  const text = await readLimitedText(response, 250_000)
   const title = /^Title:\s*(.+)$/m.exec(text)?.[1]?.trim()
   const urls = [...text.matchAll(/https?:\/\/[^\s)"'\]]+/g)].map((match) => match[0]!)
   const candidates = rankImageUrls(urls)
@@ -149,6 +185,12 @@ async function previewLinkWithFallback(target: string) {
     notes.push(`direct:${error instanceof Error ? error.message : 'error'}`)
   }
 
+  // ANF/Hollister never work via Jina/Microlink (403 / no images) and those
+  // fallbacks burn the isolate's remaining CPU/memory after Wayback.
+  if (blockedRetailHost(target)) {
+    return { candidates: [] as string[], images: [] as string[], fallback: notes.join('|') }
+  }
+
   try {
     const jina = await previewViaJina(target)
     if (jina.note) notes.push(jina.note)
@@ -211,10 +253,11 @@ Deno.serve(async (req) => {
         // Datacenter fetches often fail for retailer CDNs; try Jina-proxied binary when possible.
         const proxied = await fetch(`https://r.jina.ai/${target}`, {
           headers: { Accept: 'image/*,*/*', 'X-Return-Format': 'raw' },
-          signal: AbortSignal.timeout(20000),
+          signal: AbortSignal.timeout(12000),
         })
         if (!proxied.ok) throw new Error('Preview image is unavailable')
         const body = new Uint8Array(await proxied.arrayBuffer())
+        if (body.byteLength > 8 * 1024 * 1024) throw new Error('Preview image is too large')
         const type = proxied.headers.get('content-type') ?? 'image/jpeg'
         return new Response(body, {
           status: 200,

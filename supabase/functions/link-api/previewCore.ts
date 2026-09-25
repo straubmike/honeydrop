@@ -1,9 +1,69 @@
 // Auto-synced from linkPreviewServer.ts — run: node scripts/sync-link-preview-core.mjs
-const MAX_HTML = 1_500_000
+// Keep HTML caps tight: Supabase edge isolates allow ~2s CPU / ~250MB; full PDP
+// downloads + deep JSON walks trip WORKER_RESOURCE_LIMIT (HTTP 546).
+const MAX_HTML = 400_000
+const MAX_EMBEDDED_JSON = 200_000
 const MAX_IMAGE = 8 * 1024 * 1024
 const MAX_REMOTE_MEDIA = 40 * 1024 * 1024
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36'
+
+/** Stream-read a response and stop at maxBytes so edge never buffers multi-MB bodies. */
+async function readResponseText(response: Response, maxBytes: number): Promise<string> {
+  const reader = response.body?.getReader()
+  if (!reader) {
+    const buffer = new Uint8Array(await response.arrayBuffer())
+    return new TextDecoder().decode(buffer.subarray(0, maxBytes))
+  }
+  const chunks: Uint8Array[] = []
+  let total = 0
+  while (total < maxBytes) {
+    const { done, value } = await reader.read()
+    if (done) break
+    if (!value?.byteLength) continue
+    const take = Math.min(value.byteLength, maxBytes - total)
+    chunks.push(take === value.byteLength ? value : value.subarray(0, take))
+    total += take
+    if (take < value.byteLength) break
+  }
+  void reader.cancel().catch(() => {})
+  const merged = new Uint8Array(total)
+  let offset = 0
+  for (const chunk of chunks) {
+    merged.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  return new TextDecoder().decode(merged)
+}
+
+async function readResponseBytes(response: Response, maxBytes: number): Promise<Uint8Array> {
+  const reader = response.body?.getReader()
+  if (!reader) {
+    const buffer = new Uint8Array(await response.arrayBuffer())
+    if (buffer.byteLength > maxBytes) throw new Error('Payload is too large')
+    return buffer
+  }
+  const chunks: Uint8Array[] = []
+  let total = 0
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    if (!value?.byteLength) continue
+    total += value.byteLength
+    if (total > maxBytes) {
+      void reader.cancel().catch(() => {})
+      throw new Error('Payload is too large')
+    }
+    chunks.push(value)
+  }
+  const merged = new Uint8Array(total)
+  let offset = 0
+  for (const chunk of chunks) {
+    merged.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  return merged
+}
 
 function decodeHtml(value: string): string {
   return value
@@ -187,9 +247,12 @@ function collectMatchingProducts(
   into: Record<string, unknown>[],
   depth = 0,
 ) {
-  if (!value || depth > 16) return
+  if (!value || depth > 10 || into.length >= 4) return
   if (Array.isArray(value)) {
-    for (const entry of value) collectMatchingProducts(entry, pageUrl, handle, into, depth + 1)
+    for (const entry of value) {
+      collectMatchingProducts(entry, pageUrl, handle, into, depth + 1)
+      if (into.length >= 4) return
+    }
     return
   }
   if (typeof value !== 'object') return
@@ -203,6 +266,7 @@ function collectMatchingProducts(
   if (hasGallery && matchesPageProduct(record, pageUrl, handle)) into.push(record)
   for (const entry of Object.values(record)) {
     collectMatchingProducts(entry, pageUrl, handle, into, depth + 1)
+    if (into.length >= 4) return
   }
 }
 
@@ -229,14 +293,17 @@ function embeddedProductImages(html: string, pageUrl: string): ImageCandidate[] 
 
   let best: ImageCandidate[] = []
   for (const raw of payloads) {
+    // Skip huge embedded blobs — recursive walks blow edge CPU/memory budgets.
+    if (!raw || raw.length > MAX_EMBEDDED_JSON) continue
     try {
-      const data = JSON.parse(raw!)
+      const data = JSON.parse(raw)
       const products: Record<string, unknown>[] = []
       collectMatchingProducts(data, pageUrl, handle, products)
       for (const product of products) {
         const candidates = productImagesFromRecord(product)
         if (candidates.length > best.length) best = candidates
       }
+      if (best.length >= 8) break
     } catch {
       /* ignore broken JSON */
     }
@@ -335,27 +402,27 @@ function abercrombieProductImages(html: string, pageUrl = ''): ImageCandidate[] 
     })
 
   const found: ImageCandidate[] = []
-  // Pass 1: one faceout per colorway so every pattern is reachable early (See more / multi-thumb).
-  bases.forEach((base, colorIndex) => {
-    const face = sortShots(byBase.get(base)!)[0]
-    if (!face) return
+  // Group by colorway in pairs so "See more" (steps by 2) advances one color at a time:
+  // pair 0 = default/OG colorway, pair 1 = next colorway (coffee stripe for Marina), etc.
+  let index = 0
+  const pushShot = (shot: Shot) => {
     found.push({
-      url: `https://img.abercrombie.com/is/image/anf/${face.name}?policy=product-large`,
+      url: `https://img.abercrombie.com/is/image/anf/${shot.name}?policy=product-large`,
       kind: 'gallery',
-      index: colorIndex,
+      index: index++,
     })
-  })
-  // Pass 2: remaining shots, grouped by colorway.
-  bases.forEach((base, colorIndex) => {
+  }
+
+  for (const base of bases) {
     const shots = sortShots(byBase.get(base)!)
-    shots.slice(1).forEach((shot, shotIndex) => {
-      found.push({
-        url: `https://img.abercrombie.com/is/image/anf/${shot.name}?policy=product-large`,
-        kind: 'gallery',
-        index: 100 + colorIndex * 20 + shotIndex,
-      })
-    })
-  })
+    // Lead with two faceouts for this colorway (model1+model2 when available).
+    const lead = shots.slice(0, 2)
+    for (const shot of lead) pushShot(shot)
+  }
+  for (const base of bases) {
+    const shots = sortShots(byBase.get(base)!)
+    for (const shot of shots.slice(2)) pushShot(shot)
+  }
   return found
 }
 
@@ -576,6 +643,22 @@ function previewFromHtml(
   if (isBotWallPage(html, title)) {
     return { candidates: [], images: [] }
   }
+
+  // Abercrombie/Hollister: Scene7 KIC_ keys are enough — skip deep JSON walks that
+  // exhaust Supabase edge CPU/memory (HTTP 546 WORKER_RESOURCE_LIMIT).
+  if (abercrombieHost(finalUrl) || /KIC_[A-Z0-9-]+/i.test(html) || /hollisterco\.com/i.test(finalUrl)) {
+    const gallery = abercrombieProductImages(html, finalUrl)
+    if (gallery.length) {
+      const candidates = pickFromOrderedGallery(gallery, finalUrl)
+      return {
+        title: title || undefined,
+        description: description || undefined,
+        candidates,
+        images: candidates.slice(0, 2),
+      }
+    }
+  }
+
   const candidates = buildPreviewCandidates(html, finalUrl)
   return {
     title: title || undefined,
@@ -622,8 +705,7 @@ async function fetchHtml(url: string, timeoutMs: number): Promise<string | null>
       headers: { 'User-Agent': UA, Accept: 'text/html,application/xhtml+xml' },
       signal: AbortSignal.timeout(timeoutMs),
     })
-    const buffer = new Uint8Array(await response.arrayBuffer())
-  const html = new TextDecoder().decode(buffer.subarray(0, MAX_HTML))
+    const html = await readResponseText(response, MAX_HTML)
     if (!/og:image|KIC_|application\/ld\+json|__NEXT_DATA__/i.test(html)) return null
     return html
   } catch {
@@ -641,10 +723,11 @@ async function previewViaWayback(target: string): Promise<{
   const cached = cacheGet(`wb:${canonical}`)
   if (cached) return cached
 
-  // Fast path: Wayback "latest" snapshot (skip CDX — it often hangs ~10s+).
+  // Fast path: prefer raw (id_) snapshot first — smaller, no toolbar rewrite noise.
+  // Skip CDX — it often hangs ~10s+ and burns edge CPU budget.
   const quickHtml =
-    (await fetchHtml(`https://web.archive.org/web/2/${canonical}`, 7000)) ||
-    (await fetchHtml(`https://web.archive.org/web/2id_/${canonical}`, 5000))
+    (await fetchHtml(`https://web.archive.org/web/2id_/${canonical}`, 8000)) ||
+    (await fetchHtml(`https://web.archive.org/web/2/${canonical}`, 6000))
 
   if (quickHtml) {
     const parsed = previewFromHtml(quickHtml, canonical)
@@ -654,7 +737,7 @@ async function previewViaWayback(target: string): Promise<{
     }
   }
 
-  // Availability API → one concrete snapshot (short timeouts).
+  // Availability API → one concrete snapshot (short timeouts, sequential to save memory).
   try {
     const available = await fetch(
       `https://archive.org/wayback/available?url=${encodeURIComponent(canonical)}`,
@@ -671,17 +754,9 @@ async function previewViaWayback(target: string): Promise<{
           snapshotUrl.replace(/^(https?:\/\/web\.archive\.org\/web\/\d+)\/(https?:\/\/)/i, '$1id_/$2'),
           snapshotUrl,
         ]
-        const html = await Promise.any(
-          variants.map(
-            (url) =>
-              new Promise<string>((resolve, reject) => {
-                void fetchHtml(url, 6000).then((body) =>
-                  body ? resolve(body) : reject(new Error('empty')),
-                )
-              }),
-          ),
-        ).catch(() => null)
-        if (html) {
+        for (const variant of variants) {
+          const html = await fetchHtml(variant, 6000)
+          if (!html) continue
           const parsed = previewFromHtml(html, canonical)
           if (parsed.candidates.length) {
             cacheSet(`wb:${canonical}`, parsed)
@@ -727,8 +802,7 @@ export async function previewLink(target: string): Promise<{
         signal: AbortSignal.timeout(8000),
       })
       const finalUrl = publicUrl(response.url || url.href).href
-      const buffer = new Uint8Array(await response.arrayBuffer())
-  const html = new TextDecoder().decode(buffer.subarray(0, MAX_HTML))
+      const html = await readResponseText(response, MAX_HTML)
       if (response.ok) {
         parsed = previewFromHtml(html, finalUrl)
       }
@@ -763,8 +837,7 @@ export async function fetchPreviewImage(target: string): Promise<{ body: Uint8Ar
   if (type && !type.startsWith('image/') && !type.startsWith('application/octet-stream')) {
     throw new Error('That URL is not an image')
   }
-  const body = new Uint8Array(await response.arrayBuffer())
-  if (body.byteLength > MAX_IMAGE) throw new Error('Preview image is too large')
+  const body = await readResponseBytes(response, MAX_IMAGE)
   return { body, type: type.startsWith('image/') ? type : 'image/jpeg' }
 }
 
@@ -786,8 +859,7 @@ export async function fetchRemoteMedia(target: string): Promise<{ body: Uint8Arr
   ) {
     throw new Error('That URL is not a media file')
   }
-  const body = new Uint8Array(await response.arrayBuffer())
-  if (body.byteLength > MAX_REMOTE_MEDIA) throw new Error('Media file is too large')
+  const body = await readResponseBytes(response, MAX_REMOTE_MEDIA)
   const resolved =
     type.startsWith('image/') || type.startsWith('video/') || type.startsWith('audio/')
       ? type

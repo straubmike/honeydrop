@@ -25,8 +25,8 @@ if (!preview.images.length) {
 }
 
 const img = await fetchPreviewImage(preview.images[0]!)
-console.log('fetched image bytes', img.body.length, img.type)
-if (img.body.length < 1000) {
+console.log('fetched image bytes', img.body.byteLength, img.type)
+if (img.body.byteLength < 1000) {
   console.error('FAIL: image too small')
   process.exit(1)
 }

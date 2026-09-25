@@ -9,7 +9,7 @@
     "lint": "oxlint",
     "preview": "vite preview",
     "icons": "node scripts/generate-pwa-icons.mjs",
-    "deploy:link-api": "npx supabase functions deploy link-api --project-ref nfrylscqcfokveumyzdb",
+    "deploy:link-api": "node scripts/sync-link-preview-core.mjs && npx supabase functions deploy link-api --project-ref nfrylscqcfokveumyzdb",
     "deploy:device-link": "npx supabase functions deploy device-link --project-ref nfrylscqcfokveumyzdb"
   },
   "dependencies": {
