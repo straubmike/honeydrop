@@ -20,7 +20,7 @@ import { uid } from './dates'
 import { classifyMedia, MAX_MEDIA_BYTES, normalizeUrl } from './images'
 import { createInviteCode } from './lib/inviteCode'
 import { isSupabaseConfigured } from './lib/supabase'
-import { fetchPreviewFiles, previewPairUrls } from './linkPreview'
+import { fetchPreviewFiles, previewFetchUrls } from './linkPreview'
 import { isStoredMedia, putMedia, removeStoredMedia } from './mediaStore'
 import {
   cacheAppSnapshot,
@@ -984,7 +984,7 @@ export function useApp() {
       const step = direction === 'forward' ? 2 : -2
       const nextIndex =
         ((((item.previewIndex ?? 0) + step) % candidates.length) + candidates.length) % candidates.length
-      const files = await fetchPreviewFiles(previewPairUrls(candidates, nextIndex))
+      const files = await fetchPreviewFiles(previewFetchUrls(item.content, candidates, nextIndex))
       const extra = files.length ? await filesToAttachments(activeBoardId, files, 'preview') : []
       if (!extra.length) return
 

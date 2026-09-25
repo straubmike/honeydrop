@@ -253,46 +253,109 @@ function abercrombieHost(pageUrl: string): boolean {
 }
 
 /** Abercrombie/Hollister Scene7 keys embedded in blocked PDP HTML (e.g. from Wayback). */
-function abercrombieProductImages(html: string): ImageCandidate[] {
-  const found: ImageCandidate[] = []
-  const seen = new Set<string>()
-  const ogImage = metaContents(html, 'og:image')[0] ?? metaContents(html, 'twitter:image')[0] ?? ''
-  const primaryKey =
-    /KIC_[A-Z0-9-]+/i.exec(stripArchivePrefix(ogImage))?.[0] ??
-    /"imageId"\s*:\s*"(KIC_[A-Z0-9-]+)"/i.exec(html)?.[1] ??
-    null
+function abercrombieProductImages(html: string, pageUrl = ''): ImageCandidate[] {
+  type Shot = { name: string; kind: string; n: number }
+  const byBase = new Map<string, Shot[]>()
 
-  const push = (id: string, index: number) => {
-    const base = id.replace(/_(?:prod|model|life|flat)\d+$/i, '')
-    if (primaryKey && base.toLowerCase() !== primaryKey.toLowerCase()) return
+  const addShot = (id: string) => {
     const shot = id.match(/_(prod|model|life|flat)(\d+)$/i)
+    const base = (shot ? id.slice(0, shot.index) : id).toUpperCase()
+    if (!/^KIC_/i.test(base)) return
     const name = shot ? id : `${id}_prod1`
-    if (seen.has(name)) return
-    seen.add(name)
-    const kindOrder = shot?.[1]?.toLowerCase() === 'model' ? Number(shot[2]) : 100 + index
-    found.push({
-      url: `https://img.abercrombie.com/is/image/anf/${name}?policy=product-large`,
-      kind: 'gallery',
-      index: kindOrder,
-    })
+    const kind = (shot?.[1] ?? 'prod').toLowerCase()
+    const n = shot ? Number(shot[2]) : 1
+    const list = byBase.get(base) ?? []
+    if (list.some((entry) => entry.name.toLowerCase() === name.toLowerCase())) return
+    list.push({ name, kind, n })
+    byBase.set(base, list)
   }
 
-  let index = 0
   for (const match of html.matchAll(
     /"id"\s*:\s*"(KIC_[A-Z0-9-]+_(?:prod|model|life|flat)\d+)"/gi,
   )) {
-    push(match[1]!, index++)
+    addShot(match[1]!)
   }
-  if (!found.length) {
-    for (const match of html.matchAll(/"imageId"\s*:\s*"(KIC_[A-Z0-9-]+)"/gi)) {
-      push(match[1]!, index++)
-    }
+  for (const match of html.matchAll(/"imageId"\s*:\s*"(KIC_[A-Z0-9-]+)"/gi)) {
+    addShot(match[1]!)
+  }
+  for (const match of html.matchAll(/"kicId"\s*:\s*"(KIC_[A-Z0-9-]+)"/gi)) {
+    addShot(match[1]!)
   }
   for (const match of html.matchAll(
     /img\.abercrombie\.com\/is\/image\/anf\/(KIC_[A-Z0-9-]+_(?:prod|model|life|flat)\d+)/gi,
   )) {
-    push(match[1]!, index++)
+    addShot(match[1]!)
   }
+  if (!byBase.size) return []
+
+  const ogImage = metaContents(html, 'og:image')[0] ?? metaContents(html, 'twitter:image')[0] ?? ''
+  const primaryKey = /KIC_[A-Z0-9-]+/i.exec(stripArchivePrefix(ogImage))?.[0]?.toUpperCase() ?? null
+
+  // swatchSequence order when present (07, 08, 09…)
+  const seqByBase = new Map<string, number>()
+  for (const match of html.matchAll(
+    /"swatchSequence"\s*:\s*"(\d+)"\s*,\s*"swatchId"\s*:\s*"(KIC_[A-Z0-9-]+)_sw"/gi,
+  )) {
+    seqByBase.set(match[2]!.toUpperCase(), Number(match[1]))
+  }
+  for (const match of html.matchAll(
+    /"kicId"\s*:\s*"(KIC_[A-Z0-9-]+)"[^}]{0,400}?"(?:defaultSwatchSequence|swatchSequence)"\s*:\s*"(\d+)"/gi,
+  )) {
+    const base = match[1]!.toUpperCase()
+    if (!seqByBase.has(base)) seqByBase.set(base, Number(match[2]))
+  }
+
+  let preferModel = true
+  try {
+    const faceout = new URL(pageUrl).searchParams.get('faceout')
+    if (faceout && faceout.toLowerCase() !== 'model') preferModel = faceout.toLowerCase() !== 'prod'
+  } catch {
+    /* keep model preference */
+  }
+
+  const bases = [...byBase.keys()].sort((a, b) => {
+    if (primaryKey && a === primaryKey) return -1
+    if (primaryKey && b === primaryKey) return 1
+    return (seqByBase.get(a) ?? 999) - (seqByBase.get(b) ?? 999) || a.localeCompare(b)
+  })
+
+  const sortShots = (shots: Shot[]) =>
+    [...shots].sort((a, b) => {
+      const rank = (shot: Shot) => {
+        if (preferModel) {
+          if (shot.kind === 'model') return shot.n
+          if (shot.kind === 'prod') return 100 + shot.n
+          return 200 + shot.n
+        }
+        if (shot.kind === 'prod') return shot.n
+        if (shot.kind === 'model') return 100 + shot.n
+        return 200 + shot.n
+      }
+      return rank(a) - rank(b)
+    })
+
+  const found: ImageCandidate[] = []
+  // Pass 1: one faceout per colorway so every pattern is reachable early (See more / multi-thumb).
+  bases.forEach((base, colorIndex) => {
+    const face = sortShots(byBase.get(base)!)[0]
+    if (!face) return
+    found.push({
+      url: `https://img.abercrombie.com/is/image/anf/${face.name}?policy=product-large`,
+      kind: 'gallery',
+      index: colorIndex,
+    })
+  })
+  // Pass 2: remaining shots, grouped by colorway.
+  bases.forEach((base, colorIndex) => {
+    const shots = sortShots(byBase.get(base)!)
+    shots.slice(1).forEach((shot, shotIndex) => {
+      found.push({
+        url: `https://img.abercrombie.com/is/image/anf/${shot.name}?policy=product-large`,
+        kind: 'gallery',
+        index: 100 + colorIndex * 20 + shotIndex,
+      })
+    })
+  })
   return found
 }
 
@@ -303,8 +366,8 @@ function stripArchivePrefix(src: string): string {
 
 function scopedProductImages(html: string, pageUrl: string): ImageCandidate[] {
   const scoped = [...productGalleryImages(html), ...embeddedProductImages(html, pageUrl)]
-  if (abercrombieHost(pageUrl) || /img\.abercrombie\.com|KIC_\d/i.test(html)) {
-    return [...abercrombieProductImages(html), ...scoped]
+  if (abercrombieHost(pageUrl) || /img\.abercrombie\.com|KIC_/i.test(html)) {
+    return [...abercrombieProductImages(html, pageUrl), ...scoped]
   }
   return scoped
 }

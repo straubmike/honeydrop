@@ -71,9 +71,40 @@ export function previewPairUrls(candidates: string[], startIndex = 0): string[] 
   return first === second ? [first] : [first, second]
 }
 
-/** Preview fetch list — single file for direct media URLs, otherwise up to two gallery shots. */
+function anfColorwayKey(url: string): string | null {
+  const match = /img\.abercrombie\.com\/is\/image\/anf\/(KIC_[A-Z0-9-]+?)(?:_(?:prod|model|life|flat)\d+)?(?:\?|$)/i.exec(
+    url,
+  )
+  return match?.[1]?.toUpperCase() ?? null
+}
+
+/**
+ * Preview fetch list — direct media = one file; Abercrombie multi-color PDPs = one faceout
+ * per colorway (up to 3) so alternate patterns are visible without guessing from the URL;
+ * otherwise up to two gallery shots.
+ */
 export function previewFetchUrls(pageUrl: string, candidates: string[], startIndex = 0): string[] {
   if (isDirectMediaUrl(pageUrl)) return [pageUrl]
+
+  const rotated =
+    startIndex === 0
+      ? candidates
+      : [
+          ...candidates.slice(((startIndex % candidates.length) + candidates.length) % candidates.length),
+          ...candidates.slice(0, ((startIndex % candidates.length) + candidates.length) % candidates.length),
+        ]
+
+  const colorways: string[] = []
+  const seen = new Set<string>()
+  for (const url of rotated) {
+    const key = anfColorwayKey(url)
+    if (!key || seen.has(key)) continue
+    seen.add(key)
+    colorways.push(url)
+    if (colorways.length >= 3) break
+  }
+  if (colorways.length >= 2) return colorways
+
   return previewPairUrls(candidates, startIndex)
 }
 
