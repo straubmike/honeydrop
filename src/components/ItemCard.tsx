@@ -5,6 +5,7 @@ import {
   classifyMedia,
   clipboardMediaFiles,
   MEDIA_ACCEPT,
+  MAX_MEDIA_BYTES,
   normalizeUrl,
   parseEntryUrl,
 } from '../images'
@@ -44,7 +45,7 @@ interface ItemCardProps {
 }
 
 const CARD_INTERACTIVE =
-  'button, a, input, textarea, select, video, audio, .polaroid__open, .link-chip, .caption-form, .item__link-form, .item__import, .reply-form, .emoji-picker, .reaction-wrap, .item__drawing-wrap, .item__list-wrap'
+  'button, a, input, textarea, select, video, audio, .polaroid__open, .link-chip, .caption-form, .item__link-form, .item__import, .item__add, .reply-form, .emoji-picker, .reaction-wrap, .item__drawing-wrap, .item__list-wrap'
 
 function isCardBackgroundClick(target: EventTarget | null, card: HTMLElement): boolean {
   if (!(target instanceof HTMLElement)) return false
@@ -154,11 +155,11 @@ export function ItemCard({
   const [pickerOpen, setPickerOpen] = useState(false)
   const [editingText, setEditingText] = useState(false)
   const [textDraft, setTextDraft] = useState(item.content)
-  const [linkOpen, setLinkOpen] = useState(false)
+  const [addMode, setAddMode] = useState<'closed' | 'menu' | 'link' | 'media'>('closed')
   const [linkDraft, setLinkDraft] = useState('')
-  const [importOpen, setImportOpen] = useState(false)
   const [importDraft, setImportDraft] = useState('')
   const [importBusy, setImportBusy] = useState(false)
+  const addMenuRef = useRef<HTMLDivElement>(null)
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null)
   const [cycling, setCycling] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -178,13 +179,17 @@ export function ItemCard({
   const media = itemMediaAttachments(item)
   const extraLinks = itemLinkAttachments(item)
   const previewCandidates = item.previewCandidates ?? []
-  const lightboxUsesCandidates = item.type === 'link' && previewCandidates.length > 0
+  // Prefer attachment lightbox once the user has added their own photos/videos to a link drop.
+  const hasUserMedia = media.some((part) => part.source !== 'preview')
+  const lightboxUsesCandidates =
+    item.type === 'link' && previewCandidates.length > 0 && !hasUserMedia
   const lightboxSlides = useMemo<LightboxSlide[]>(() => {
     if (lightboxUsesCandidates) {
       return previewCandidates.map((url) => ({ kind: 'url', url }))
     }
     return media.map((attachment) => ({ kind: 'attachment', attachment }))
   }, [lightboxUsesCandidates, media, previewCandidates])
+  const canCrossAdd = isMediaItem(item) || item.type === 'link'
 
   const openLightboxAt = (mediaIndex: number) => {
     if (lightboxUsesCandidates) {
@@ -241,26 +246,52 @@ export function ItemCard({
     setEditingText(false)
   }
 
+  const closeAdd = () => {
+    setAddMode('closed')
+    setLinkDraft('')
+    setImportDraft('')
+    setImportBusy(false)
+  }
+
   const addLink = (event: FormEvent) => {
     event.preventDefault()
     const url = normalizeUrl(linkDraft)
     if (!url) return
     onAddLink(url)
     setLinkDraft('')
-    setLinkOpen(false)
-  }
-
-  const closeImport = () => {
-    setImportOpen(false)
-    setImportDraft('')
-    setImportBusy(false)
+    setAddMode('closed')
   }
 
   const importMediaFiles = (files: File[]) => {
     if (!files.length) return
-    onAddFiles(files)
-    closeImport()
+    const accepted: File[] = []
+    for (const file of files) {
+      if (file.size > MAX_MEDIA_BYTES) {
+        window.alert(`${file.name} is too large. Try something under 40 MB.`)
+        continue
+      }
+      const kind = classifyMedia(file)
+      if (!kind) {
+        window.alert(`${file.name} isn’t a common web format.`)
+        continue
+      }
+      accepted.push(file)
+    }
+    if (!accepted.length) return
+    onAddFiles(accepted)
+    closeAdd()
   }
+
+  useEffect(() => {
+    if (addMode !== 'menu') return
+    const onPointerDown = (event: MouseEvent) => {
+      if (addMenuRef.current && !addMenuRef.current.contains(event.target as Node)) {
+        setAddMode('closed')
+      }
+    }
+    window.addEventListener('mousedown', onPointerDown)
+    return () => window.removeEventListener('mousedown', onPointerDown)
+  }, [addMode])
 
   const importFromUrl = async (raw: string) => {
     const url = parseEntryUrl(raw)
@@ -400,9 +431,9 @@ export function ItemCard({
         </div>
       ) : null}
 
-      {item.type === 'link' ? (
+      {item.type === 'link' || extraLinks.length > 0 ? (
         <div className="item__links">
-          <LinkChip url={item.content} />
+          {item.type === 'link' ? <LinkChip url={item.content} /> : null}
           {extraLinks.map((link) => (
             <LinkChip
               key={link.id}
@@ -511,7 +542,7 @@ export function ItemCard({
         )
       ) : null}
 
-      {isMediaItem(item) || item.type === 'link' || item.type === 'drawing' || item.type === 'list' ? (
+      {canCrossAdd || item.type === 'drawing' || item.type === 'list' ? (
         <div className="item__tools">
           {item.type === 'drawing' ? (
             <button type="button" className="text-btn" onClick={onEditDrawing}>
@@ -521,40 +552,34 @@ export function ItemCard({
             <button type="button" className="text-btn" onClick={onEditList}>
               Edit
             </button>
-          ) : isMediaItem(item) ? (
-            importOpen ? (
-              <div className="item__import">
-                <button
-                  type="button"
-                  className="ghost"
-                  disabled={importBusy}
-                  onClick={() => fileRef.current?.click()}
-                >
-                  Import
-                </button>
-                <form className="item__link-form" onSubmit={submitImportPaste}>
-                  <input
-                    value={importDraft}
-                    onChange={(event) => setImportDraft(event.target.value)}
-                    onPaste={handleImportPaste}
-                    placeholder="Paste a link or image…"
-                    autoFocus
-                    disabled={importBusy}
-                  />
-                  <button type="submit" className="ghost" disabled={!importDraft.trim() || importBusy}>
-                    {importBusy ? 'Adding…' : 'Add'}
-                  </button>
-                  <button type="button" className="ghost" disabled={importBusy} onClick={closeImport}>
-                    Cancel
-                  </button>
-                </form>
-              </div>
-            ) : (
-              <button type="button" className="text-btn" onClick={() => setImportOpen(true)}>
-                Add files
+          ) : addMode === 'media' ? (
+            <div className="item__import">
+              <button
+                type="button"
+                className="ghost"
+                disabled={importBusy}
+                onClick={() => fileRef.current?.click()}
+              >
+                Import
               </button>
-            )
-          ) : linkOpen ? (
+              <form className="item__link-form" onSubmit={submitImportPaste}>
+                <input
+                  value={importDraft}
+                  onChange={(event) => setImportDraft(event.target.value)}
+                  onPaste={handleImportPaste}
+                  placeholder="Paste a link or image…"
+                  autoFocus
+                  disabled={importBusy}
+                />
+                <button type="submit" className="ghost" disabled={!importDraft.trim() || importBusy}>
+                  {importBusy ? 'Adding…' : 'Add'}
+                </button>
+                <button type="button" className="ghost" disabled={importBusy} onClick={closeAdd}>
+                  Cancel
+                </button>
+              </form>
+            </div>
+          ) : addMode === 'link' ? (
             <form className="item__link-form" onSubmit={addLink}>
               <input
                 value={linkDraft}
@@ -565,14 +590,46 @@ export function ItemCard({
               <button type="submit" className="ghost" disabled={!linkDraft.trim()}>
                 Add
               </button>
-              <button type="button" className="ghost" onClick={() => setLinkOpen(false)}>
+              <button type="button" className="ghost" onClick={closeAdd}>
                 Cancel
               </button>
             </form>
           ) : (
-            <button type="button" className="text-btn" onClick={() => setLinkOpen(true)}>
-              Add link
-            </button>
+            <div className="item__add" ref={addMenuRef}>
+              <button
+                type="button"
+                className="text-btn"
+                aria-expanded={addMode === 'menu'}
+                aria-haspopup="menu"
+                onClick={() => setAddMode((mode) => (mode === 'menu' ? 'closed' : 'menu'))}
+              >
+                Add
+              </button>
+              {addMode === 'menu' ? (
+                <div className="item__add-menu" role="menu">
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setImportDraft('')
+                      setAddMode('media')
+                    }}
+                  >
+                    Photo or video
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setLinkDraft('')
+                      setAddMode('link')
+                    }}
+                  >
+                    Link
+                  </button>
+                </div>
+              ) : null}
+            </div>
           )}
         </div>
       ) : null}

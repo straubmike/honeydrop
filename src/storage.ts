@@ -6,7 +6,7 @@ export { createInviteCode }
 
 const KEY = 'ideaboard.v1'
 
-/** @deprecated Local-only fallback; cloud mode uses Supabase. */
+/** Local-only fallback when Supabase env vars are missing (demo mode). */
 export function loadApp(): AppState {
   try {
     const raw = localStorage.getItem(KEY)
@@ -25,7 +25,7 @@ export function loadApp(): AppState {
   }
 }
 
-/** @deprecated Local-only fallback; cloud mode uses Supabase. */
+/** Persist demo-mode state to localStorage. */
 export function saveApp(state: AppState): void {
   localStorage.setItem(KEY, JSON.stringify(state))
 }
