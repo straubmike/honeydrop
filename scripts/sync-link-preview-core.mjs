@@ -6,8 +6,8 @@ let body = src
   .replace(/^import[\s\S]*?\n(?=const MAX_HTML)/, '')
   .replace(/function sendJson[\s\S]*$/, '')
 
-body = body.replace(
-  /const buffer = Buffer\.from\(await response\.arrayBuffer\(\)\)\r?\n\s*const html = buffer\.subarray\(0, MAX_HTML\)\.toString\('utf8'\)/,
+body = body.replaceAll(
+  /const buffer = Buffer\.from\(await response\.arrayBuffer\(\)\)\r?\n\s*const html = buffer\.subarray\(0, MAX_HTML\)\.toString\('utf8'\)/g,
   'const buffer = new Uint8Array(await response.arrayBuffer())\n  const html = new TextDecoder().decode(buffer.subarray(0, MAX_HTML))',
 )
 body = body.replaceAll(

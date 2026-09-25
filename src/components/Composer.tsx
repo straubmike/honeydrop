@@ -44,6 +44,8 @@ export function Composer({ onAdd, onDraw, onList }: ComposerProps) {
   } | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
+  const previewGenRef = useRef(0)
+  const captionTouchedRef = useRef(false)
 
   useEffect(() => {
     const onClick = (event: MouseEvent) => {
@@ -62,6 +64,8 @@ export function Composer({ onAdd, onDraw, onList }: ComposerProps) {
   }
 
   const resetExtras = () => {
+    previewGenRef.current += 1
+    captionTouchedRef.current = false
     revokeAll(pending)
     if (linkPreview) {
       for (const thumb of linkPreview.thumbs) URL.revokeObjectURL(thumb)
@@ -118,8 +122,12 @@ export function Composer({ onAdd, onDraw, onList }: ComposerProps) {
   }
 
   const openLinkEntry = (entryUrl: string) => {
+    previewGenRef.current += 1
+    captionTouchedRef.current = false
     setText('')
     setUrl(entryUrl)
+    setCaption('')
+    setLinkPreview(null)
     setMode('link')
     setMenuOpen(false)
     void loadPreview(entryUrl)
@@ -195,11 +203,17 @@ export function Composer({ onAdd, onDraw, onList }: ComposerProps) {
     const content = normalizeUrl(raw)
     if (!content) {
       setLinkPreview(null)
+      setCaption('')
+      captionTouchedRef.current = false
       return
     }
+    const gen = ++previewGenRef.current
+    captionTouchedRef.current = false
+    setCaption('')
     setPreviewBusy(true)
     try {
       const file = await fetchRemoteMediaFile(content)
+      if (gen !== previewGenRef.current) return
       if (file && classifyMedia(file)) {
         setLinkPreview(null)
         setUrl('')
@@ -208,6 +222,7 @@ export function Composer({ onAdd, onDraw, onList }: ComposerProps) {
       }
 
       const preview = await fetchLinkPreview(content)
+      if (gen !== previewGenRef.current) return
       setLinkPreview((prev) => {
         if (prev) for (const thumb of prev.thumbs) URL.revokeObjectURL(thumb)
         return {
@@ -217,9 +232,11 @@ export function Composer({ onAdd, onDraw, onList }: ComposerProps) {
           candidates: preview.candidates,
         }
       })
-      setCaption((current) => current || preview.title || '')
+      if (!captionTouchedRef.current) {
+        setCaption(preview.title || '')
+      }
     } finally {
-      setPreviewBusy(false)
+      if (gen === previewGenRef.current) setPreviewBusy(false)
     }
   }
 
@@ -310,7 +327,10 @@ export function Composer({ onAdd, onDraw, onList }: ComposerProps) {
           ) : null}
           <input
             value={caption}
-            onChange={(event) => setCaption(event.target.value)}
+            onChange={(event) => {
+              captionTouchedRef.current = true
+              setCaption(event.target.value)
+            }}
             placeholder="Optional note"
           />
           <div className="composer__row">
@@ -355,7 +375,10 @@ export function Composer({ onAdd, onDraw, onList }: ComposerProps) {
           </div>
           <input
             value={caption}
-            onChange={(event) => setCaption(event.target.value)}
+            onChange={(event) => {
+              captionTouchedRef.current = true
+              setCaption(event.target.value)
+            }}
             placeholder="Optional caption"
           />
           <div className="composer__row">
@@ -398,6 +421,11 @@ export function Composer({ onAdd, onDraw, onList }: ComposerProps) {
                   role="menuitem"
                   onClick={() => {
                     setMenuOpen(false)
+                    previewGenRef.current += 1
+                    captionTouchedRef.current = false
+                    setCaption('')
+                    setLinkPreview(null)
+                    setUrl('')
                     setMode('link')
                   }}
                 >

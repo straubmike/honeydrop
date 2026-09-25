@@ -43,7 +43,8 @@ function publicUrl(raw: string): URL {
 
 function absUrl(src: string, base: string): string | null {
   try {
-    const url = new URL(src.trim(), base)
+    const cleaned = stripArchivePrefix(src.trim())
+    const url = new URL(cleaned, base)
     if (url.protocol !== 'http:' && url.protocol !== 'https:') return null
     if (isPrivateHost(url.hostname)) return null
     return url.href
@@ -56,16 +57,16 @@ function metaContents(html: string, key: string): string[] {
   const values: string[] = []
   const patterns = [
     new RegExp(
-      `<meta\\b[^>]*?(?:property|name)=["']${key}["'][^>]*?content=["']([^"']+)["'][^>]*?>`,
+      `<meta\\b[^>]*?(?:property|name)=["']${key}["'][^>]*?content=(["'])([\\s\\S]*?)\\1[^>]*?>`,
       'gi',
     ),
     new RegExp(
-      `<meta\\b[^>]*?content=["']([^"']+)["'][^>]*?(?:property|name)=["']${key}["'][^>]*?>`,
+      `<meta\\b[^>]*?content=(["'])([\\s\\S]*?)\\1[^>]*?(?:property|name)=["']${key}["'][^>]*?>`,
       'gi',
     ),
   ]
   for (const pattern of patterns) {
-    for (const match of html.matchAll(pattern)) values.push(decodeHtml(match[1].trim()))
+    for (const match of html.matchAll(pattern)) values.push(decodeHtml(match[2].trim()))
   }
   return values
 }
@@ -133,7 +134,11 @@ function pageProductId(pageUrl: string): string | null {
   try {
     const parts = new URL(pageUrl).pathname.split('/').filter(Boolean)
     const last = parts.at(-1)
-    if (last && /^\d+$/.test(last)) return last
+    if (!last) return null
+    if (/^\d+$/.test(last)) return last
+    // Retail PDPs often end with slug-12345678 (Abercrombie, etc.)
+    const trailing = /-(\d{5,})$/.exec(last)
+    if (trailing?.[1]) return trailing[1]
   } catch {
     /* ignore */
   }
@@ -241,8 +246,69 @@ function embeddedProductImages(html: string, pageUrl: string): ImageCandidate[] 
   return best
 }
 
+function abercrombieHost(pageUrl: string): boolean {
+  try {
+    return /(^|\.)abercrombie\.com$/i.test(new URL(pageUrl).hostname)
+  } catch {
+    return false
+  }
+}
+
+/** Abercrombie/Hollister Scene7 keys embedded in blocked PDP HTML (e.g. from Wayback). */
+function abercrombieProductImages(html: string): ImageCandidate[] {
+  const found: ImageCandidate[] = []
+  const seen = new Set<string>()
+  const ogImage = metaContents(html, 'og:image')[0] ?? metaContents(html, 'twitter:image')[0] ?? ''
+  const primaryKey =
+    /KIC_[A-Z0-9-]+/i.exec(stripArchivePrefix(ogImage))?.[0] ??
+    /"imageId"\s*:\s*"(KIC_[A-Z0-9-]+)"/i.exec(html)?.[1] ??
+    null
+
+  const push = (id: string, index: number) => {
+    const base = id.replace(/_(?:prod|model|life|flat)\d+$/i, '')
+    if (primaryKey && base.toLowerCase() !== primaryKey.toLowerCase()) return
+    const shot = id.match(/_(prod|model|life|flat)(\d+)$/i)
+    const name = shot ? id : `${id}_prod1`
+    if (seen.has(name)) return
+    seen.add(name)
+    const kindOrder = shot?.[1]?.toLowerCase() === 'model' ? Number(shot[2]) : 100 + index
+    found.push({
+      url: `https://img.abercrombie.com/is/image/anf/${name}?policy=product-large`,
+      kind: 'gallery',
+      index: kindOrder,
+    })
+  }
+
+  let index = 0
+  for (const match of html.matchAll(
+    /"id"\s*:\s*"(KIC_[A-Z0-9-]+_(?:prod|model|life|flat)\d+)"/gi,
+  )) {
+    push(match[1]!, index++)
+  }
+  if (!found.length) {
+    for (const match of html.matchAll(/"imageId"\s*:\s*"(KIC_[A-Z0-9-]+)"/gi)) {
+      push(match[1]!, index++)
+    }
+  }
+  for (const match of html.matchAll(
+    /img\.abercrombie\.com\/is\/image\/anf\/(KIC_[A-Z0-9-]+_(?:prod|model|life|flat)\d+)/gi,
+  )) {
+    push(match[1]!, index++)
+  }
+  return found
+}
+
+function stripArchivePrefix(src: string): string {
+  const match = /https?:\/\/web\.archive\.org\/web\/\d+(?:im_)?\/(https?:\/\/.+)/i.exec(src)
+  return match?.[1] ?? src
+}
+
 function scopedProductImages(html: string, pageUrl: string): ImageCandidate[] {
-  return [...productGalleryImages(html), ...embeddedProductImages(html, pageUrl)]
+  const scoped = [...productGalleryImages(html), ...embeddedProductImages(html, pageUrl)]
+  if (abercrombieHost(pageUrl) || /img\.abercrombie\.com|KIC_\d/i.test(html)) {
+    return [...abercrombieProductImages(html), ...scoped]
+  }
+  return scoped
 }
 
 function productGalleryImages(html: string): ImageCandidate[] {
@@ -357,6 +423,7 @@ function scoreImage(candidate: ImageCandidate): number {
   else if (candidate.kind === 'og') score += 8
   else score += 4
   if (/\/products?\//.test(lower) || /\/files\/\d+\//.test(lower)) score += 8
+  if (/img\.abercrombie\.com\/is\/image\/anf\/kic_/i.test(lower)) score += 16
   if (/(_|\b)(800|1000|1200|1400|1600|1800|2000|2048|2400)x/.test(lower)) score += 2
   if (
     looksLikeJunk(lower) ||
@@ -430,21 +497,15 @@ function isBotWallPage(html: string, title?: string): boolean {
   return false
 }
 
-export async function previewLink(target: string): Promise<{
+function previewFromHtml(
+  html: string,
+  finalUrl: string,
+): {
   title?: string
   description?: string
   images: string[]
   candidates: string[]
-}> {
-  const url = publicUrl(target)
-  const response = await fetch(url, {
-    redirect: 'follow',
-    headers: { 'User-Agent': UA, Accept: 'text/html,application/xhtml+xml' },
-    signal: AbortSignal.timeout(8000),
-  })
-  const finalUrl = publicUrl(response.url || url.href).href
-  const buffer = Buffer.from(await response.arrayBuffer())
-  const html = buffer.subarray(0, MAX_HTML).toString('utf8')
+} {
   const title =
     metaContents(html, 'og:title')[0] ||
     metaContents(html, 'twitter:title')[0] ||
@@ -461,6 +522,99 @@ export async function previewLink(target: string): Promise<{
     candidates,
     images: candidates.slice(0, 2),
   }
+}
+
+function canonicalPreviewUrl(target: string): string {
+  try {
+    const url = new URL(target)
+    url.hash = ''
+    // Query params (category, faceout, grid position) rarely matter for OG/product images.
+    url.search = ''
+    return url.href
+  } catch {
+    return target
+  }
+}
+
+async function previewViaWayback(target: string): Promise<{
+  title?: string
+  description?: string
+  images: string[]
+  candidates: string[]
+} | null> {
+  const candidates = [canonicalPreviewUrl(target), target].filter(
+    (value, index, list) => list.indexOf(value) === index,
+  )
+  for (const candidate of candidates) {
+    try {
+      const available = await fetch(
+        `https://archive.org/wayback/available?url=${encodeURIComponent(candidate)}`,
+        { signal: AbortSignal.timeout(8000) },
+      )
+      if (!available.ok) continue
+      const payload = (await available.json()) as {
+        archived_snapshots?: { closest?: { available?: boolean; url?: string; timestamp?: string } }
+      }
+      const closest = payload.archived_snapshots?.closest
+      if (!closest?.available || !closest.url) continue
+      const snapshotUrl = closest.url.replace(/^http:\/\//i, 'https://')
+      const rawUrl = snapshotUrl.replace(
+        /^(https?:\/\/web\.archive\.org\/web\/\d+)\/(https?:\/\/)/i,
+        '$1id_/$2',
+      )
+      const response = await fetch(rawUrl, {
+        redirect: 'follow',
+        headers: { 'User-Agent': UA, Accept: 'text/html,application/xhtml+xml' },
+        signal: AbortSignal.timeout(20000),
+      })
+      if (!response.ok) continue
+      const buffer = Buffer.from(await response.arrayBuffer())
+      const html = buffer.subarray(0, MAX_HTML).toString('utf8')
+      const parsed = previewFromHtml(html, canonicalPreviewUrl(target))
+      if (parsed.candidates.length) return parsed
+    } catch {
+      /* try next candidate URL */
+    }
+  }
+  return null
+}
+
+export async function previewLink(target: string): Promise<{
+  title?: string
+  description?: string
+  images: string[]
+  candidates: string[]
+}> {
+  const url = publicUrl(target)
+  let parsed: {
+    title?: string
+    description?: string
+    images: string[]
+    candidates: string[]
+  } = { candidates: [], images: [] }
+
+  try {
+    const response = await fetch(url, {
+      redirect: 'follow',
+      headers: { 'User-Agent': UA, Accept: 'text/html,application/xhtml+xml' },
+      signal: AbortSignal.timeout(8000),
+    })
+    const finalUrl = publicUrl(response.url || url.href).href
+    const buffer = Buffer.from(await response.arrayBuffer())
+    const html = buffer.subarray(0, MAX_HTML).toString('utf8')
+    if (response.ok) {
+      parsed = previewFromHtml(html, finalUrl)
+    }
+  } catch {
+    /* fall through to Wayback for bot-walled retailers */
+  }
+
+  if (parsed.candidates.length) return parsed
+
+  const archived = await previewViaWayback(url.href)
+  if (archived?.candidates.length) return archived
+
+  return parsed
 }
 
 export async function fetchPreviewImage(target: string): Promise<{ body: Buffer; type: string }> {
