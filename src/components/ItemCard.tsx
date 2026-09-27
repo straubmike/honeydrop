@@ -553,14 +553,7 @@ export function ItemCard({
             <div className="item__list">
               <ol className="item__list-rows">
                 {list.entries.map((entry, index) => (
-                  <li
-                    key={entry.id}
-                    className={
-                      list.mode === 'check' && entry.checked
-                        ? 'item__list-row item__list-row--checked'
-                        : 'item__list-row'
-                    }
-                  >
+                  <li key={entry.id} className="item__list-row">
                     <span className="item__list-num">{index + 1}.</span>
                     <div className="item__list-body">
                       <span className="item__list-text">{entry.text.trim() || 'Untitled'}</span>

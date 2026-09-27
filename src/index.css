@@ -2194,12 +2194,6 @@ body.is-dragging .ideas--compact {
   align-items: start;
 }
 
-.item__list-row--checked .item__list-text {
-  color: var(--muted);
-  text-decoration: line-through;
-  text-decoration-thickness: 1px;
-}
-
 .item__list-num {
   font-weight: 700;
   color: var(--muted);
