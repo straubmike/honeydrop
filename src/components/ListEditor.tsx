@@ -101,6 +101,7 @@ export function ListEditor({ title, initial, onClose, onSave }: ListEditorProps)
               { value: 'off', label: 'Off' },
               { value: 'qty', label: '#' },
               { value: 'money', label: '$' },
+              { value: 'check', label: '☐' },
             ] as const
           ).map((option) => (
             <button
@@ -108,6 +109,15 @@ export function ListEditor({ title, initial, onClose, onSave }: ListEditorProps)
               type="button"
               className={mode === option.value ? 'list-mode__btn list-mode__btn--on' : 'list-mode__btn'}
               aria-pressed={mode === option.value}
+              aria-label={
+                option.value === 'off'
+                  ? 'No extra column'
+                  : option.value === 'qty'
+                    ? 'Quantity column'
+                    : option.value === 'money'
+                      ? 'Dollar column'
+                      : 'Checkbox column'
+              }
               onClick={() => setMode(option.value)}
             >
               {option.label}
@@ -117,7 +127,16 @@ export function ListEditor({ title, initial, onClose, onSave }: ListEditorProps)
 
         <ol className="list-editor__rows">
           {entries.map((entry, index) => (
-            <li key={entry.id} className={mode === 'off' ? 'list-editor__row' : 'list-editor__row list-editor__row--extra'}>
+            <li
+              key={entry.id}
+              className={
+                mode === 'off'
+                  ? 'list-editor__row'
+                  : mode === 'check'
+                    ? 'list-editor__row list-editor__row--extra list-editor__row--check'
+                    : 'list-editor__row list-editor__row--extra'
+              }
+            >
               <span className="list-editor__num" aria-hidden="true">
                 {index + 1}.
               </span>
@@ -158,6 +177,17 @@ export function ListEditor({ title, initial, onClose, onSave }: ListEditorProps)
                   placeholder="$"
                   aria-label={`Amount for item ${index + 1}`}
                 />
+              ) : null}
+              {mode === 'check' ? (
+                <label className="list-editor__check-wrap">
+                  <input
+                    type="checkbox"
+                    className="list-check"
+                    checked={entry.checked === true}
+                    onChange={() => updateEntry(entry.id, { checked: !entry.checked })}
+                    aria-label={`Checked for item ${index + 1}`}
+                  />
+                </label>
               ) : null}
               <button
                 type="button"
