@@ -12,7 +12,14 @@ import {
 import { fetchRemoteMediaFile } from '../linkPreview'
 import type { CollectionCoverPreview, Item } from '../types'
 import { parseDrawing } from '../drawing'
-import { formatMoney, formatQty, parseList, sumMoney } from '../list'
+import {
+  formatMoney,
+  formatQty,
+  parseList,
+  stringifyList,
+  sumMoney,
+  toggleListChecked,
+} from '../list'
 import { EmojiPicker, LinkChip } from './Composer'
 import { DrawingPreview } from './DrawingCanvas'
 import { LinkifiedText } from './ListEditor'
@@ -531,11 +538,12 @@ export function ItemCard({
           role="button"
           tabIndex={0}
           onClick={(event) => {
-            if ((event.target as HTMLElement).closest('a')) return
+            if ((event.target as HTMLElement).closest('a, .list-check, .item__list-check-wrap')) return
             onEditList?.()
           }}
           onKeyDown={(event) => {
             if (event.key === 'Enter' || event.key === ' ') {
+              if ((event.target as HTMLElement).closest('a, .list-check, .item__list-check-wrap')) return
               event.preventDefault()
               onEditList?.()
             }
@@ -560,6 +568,23 @@ export function ItemCard({
                     ) : null}
                     {list.mode === 'money' && entry.amount != null && Number.isFinite(entry.amount) ? (
                       <span className="item__list-extra">${formatMoney(entry.amount)}</span>
+                    ) : null}
+                    {list.mode === 'check' ? (
+                      <label
+                        className="item__list-check-wrap"
+                        onClick={(event) => event.stopPropagation()}
+                        onPointerDown={(event) => event.stopPropagation()}
+                      >
+                        <input
+                          type="checkbox"
+                          className="list-check"
+                          checked={entry.checked === true}
+                          onChange={() => {
+                            onContent(stringifyList(toggleListChecked(list, entry.id)))
+                          }}
+                          aria-label={`Mark “${entry.text.trim() || 'item'}” ${entry.checked ? 'unchecked' : 'checked'}`}
+                        />
+                      </label>
                     ) : null}
                   </li>
                 ))}

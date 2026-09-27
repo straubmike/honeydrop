@@ -1,4 +1,5 @@
 import { toISODate, uid } from './dates'
+import { createListEntry, stringifyList } from './list'
 import type { AppState, Collection, IdeaBoard, Item } from './types'
 
 function ago(minutes: number): string {
@@ -180,6 +181,23 @@ export function seedState(): AppState {
         x: 52,
         y: 56,
         z: 1,
+      }),
+      item({
+        type: 'list',
+        author: 'You',
+        authorUserId: userId,
+        createdAt: ago(60 * 3),
+        content: stringifyList({
+          mode: 'check',
+          entries: [
+            createListEntry({ text: 'Plaid blanket', checked: true }),
+            createListEntry({ text: 'Fruit + cheese', checked: false }),
+            createListEntry({ text: 'Thermos of tea', note: 'Alex bringing', checked: false }),
+          ],
+        }),
+        x: 280,
+        y: 48,
+        z: 2,
       }),
     ],
   }

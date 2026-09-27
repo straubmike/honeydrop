@@ -1,6 +1,6 @@
 import { uid } from './dates'
 
-export type ListExtraMode = 'off' | 'qty' | 'money'
+export type ListExtraMode = 'off' | 'qty' | 'money' | 'check'
 
 export interface ListEntry {
   id: string
@@ -8,6 +8,8 @@ export interface ListEntry {
   note?: string
   qty?: number | null
   amount?: number | null
+  /** Present when list mode is `check`; either partner can toggle. */
+  checked?: boolean
 }
 
 export interface ListData {
@@ -20,7 +22,7 @@ export type TextSegment = { type: 'text'; value: string } | { type: 'link'; valu
 const URL_RE = /(https?:\/\/[^\s<]+|www\.[^\s<]+)/gi
 
 function isListExtraMode(value: unknown): value is ListExtraMode {
-  return value === 'off' || value === 'qty' || value === 'money'
+  return value === 'off' || value === 'qty' || value === 'money' || value === 'check'
 }
 
 function asOptionalNumber(value: unknown): number | null | undefined {
@@ -45,6 +47,7 @@ function normalizeEntry(raw: unknown): ListEntry | null {
     note: note || undefined,
     qty: asOptionalNumber(entry.qty),
     amount: asOptionalNumber(entry.amount),
+    checked: entry.checked === true,
   }
 }
 
@@ -55,6 +58,7 @@ export function createListEntry(partial?: Partial<Omit<ListEntry, 'id'>>): ListE
     note: partial?.note,
     qty: partial?.qty,
     amount: partial?.amount,
+    checked: partial?.checked === true,
   }
 }
 
@@ -93,6 +97,17 @@ export function pruneList(data: ListData): ListData {
     return false
   })
   return { mode: data.mode, entries }
+}
+
+/** Toggle checked on one entry; no-op unless mode is `check`. */
+export function toggleListChecked(data: ListData, entryId: string): ListData {
+  if (data.mode !== 'check') return data
+  return {
+    ...data,
+    entries: data.entries.map((entry) =>
+      entry.id === entryId ? { ...entry, checked: !entry.checked } : entry,
+    ),
+  }
 }
 
 export function sumMoney(data: ListData): number {

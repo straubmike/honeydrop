@@ -2200,6 +2200,14 @@ body.is-dragging .ideas--compact {
   line-height: 1.35;
 }
 
+.item__list-check-wrap {
+  display: grid;
+  place-items: center;
+  align-self: start;
+  margin-top: 0.1rem;
+  cursor: pointer;
+}
+
 .item__list-body {
   display: flex;
   flex-direction: column;
@@ -2298,10 +2306,29 @@ body.is-dragging .ideas--compact {
   grid-template-columns: auto minmax(0, 1fr) 4.5rem auto;
 }
 
+.list-editor__row--check {
+  grid-template-columns: auto minmax(0, 1fr) 2rem auto;
+}
+
 .list-editor__num {
   padding-top: 0.55rem;
   font-weight: 700;
   color: var(--muted);
+}
+
+.list-editor__check-wrap {
+  display: grid;
+  place-items: center;
+  padding-top: 0.55rem;
+  cursor: pointer;
+}
+
+.list-check {
+  width: 1.15rem;
+  height: 1.15rem;
+  margin: 0;
+  accent-color: var(--ink);
+  cursor: pointer;
 }
 
 .list-editor__fields {
