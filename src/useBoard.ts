@@ -36,6 +36,11 @@ import {
   type SyncStatus,
 } from './offlineStore'
 import { nextPin, resolvePin } from './pins'
+import {
+  mergeBoardFromRemote,
+  normalizeGeoLabel,
+  pruneDeletedIds,
+} from './boardMerge'
 import { withDevSampleLocations } from './seed'
 import { loadApp, saveApp } from './storage'
 import type {
@@ -151,9 +156,37 @@ export function useApp() {
   const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const dirtyBoardsRef = useRef<Set<string>>(new Set())
   const dirtyMembersRef = useRef<Set<string>>(new Set())
+  /** Last remote collections applied/persisted per board — used to detect partner deletes. */
+  const baselineCollectionsRef = useRef<Map<string, Collection[]>>(new Map())
+  /** Local collection deletes not yet confirmed absent on the server. */
+  const deletedCollectionsRef = useRef<Map<string, Set<string>>>(new Map())
   const stateRef = useRef(state)
   const flushingRef = useRef(false)
   const boardIdsKey = state.boards.map((board) => board.id).join(',')
+
+  const rememberBaseline = useCallback((board: IdeaBoard) => {
+    baselineCollectionsRef.current.set(
+      board.id,
+      board.collections.map((collection) => collection),
+    )
+  }, [])
+
+  const deletedIdsFor = useCallback((boardId: string) => {
+    return deletedCollectionsRef.current.get(boardId) ?? new Set<string>()
+  }, [])
+
+  const markCollectionDeleted = useCallback((boardId: string, collectionId: string) => {
+    const set = deletedCollectionsRef.current.get(boardId) ?? new Set<string>()
+    set.add(collectionId)
+    deletedCollectionsRef.current.set(boardId, set)
+  }, [])
+
+  const clearCollectionDeleted = useCallback((boardId: string, collectionId: string) => {
+    const set = deletedCollectionsRef.current.get(boardId)
+    if (!set) return
+    set.delete(collectionId)
+    if (!set.size) deletedCollectionsRef.current.delete(boardId)
+  }, [])
 
   const markBoardDirty = useCallback((boardId: string) => {
     dirtyBoardsRef.current.add(boardId)
@@ -224,7 +257,43 @@ export function useApp() {
             return
           }
           try {
-            await persistBoard(board)
+            // Fetch-merge-write so a stale local snapshot cannot resurrect
+            // partner deletes or wipe their event location edits.
+            const remote = await fetchBoard(boardId)
+            const deletedIds = deletedIdsFor(boardId)
+            const baseline = baselineCollectionsRef.current.get(boardId) ?? remote?.collections ?? []
+            const toSave: IdeaBoard = remote
+              ? {
+                  ...mergeBoardFromRemote(remote, board, baseline, deletedIds),
+                  title: board.title,
+                  pendingDeletion: board.pendingDeletion,
+                  updatedAt: new Date().toISOString(),
+                }
+              : { ...board, updatedAt: new Date().toISOString() }
+
+            await persistBoard(toSave)
+            rememberBaseline(toSave)
+            deletedCollectionsRef.current.set(
+              boardId,
+              pruneDeletedIds(deletedIds, toSave.collections),
+            )
+
+            const stillDiffers =
+              JSON.stringify(toSave.collections) !== JSON.stringify(board.collections) ||
+              toSave.title !== board.title ||
+              JSON.stringify(toSave.pendingDeletion ?? null) !==
+                JSON.stringify(board.pendingDeletion ?? null)
+            if (stillDiffers) {
+              skipPersistRef.current = true
+              stateRef.current = {
+                ...stateRef.current,
+                boards: stateRef.current.boards.map((entry) =>
+                  entry.id === boardId ? toSave : entry,
+                ),
+              }
+              setState(stateRef.current)
+            }
+
             await clearPersistQueueItem({ kind: 'board', boardId })
           } catch (error) {
             console.error('Failed to save board', error)
@@ -234,7 +303,7 @@ export function useApp() {
           }
         }),
         ...memberIds.map(async (boardId) => {
-          const board = snapshot.boards.find((entry) => entry.id === boardId)
+          const board = stateRef.current.boards.find((entry) => entry.id === boardId)
           const me = board?.members.find((member) => member.userId === snapshot.userId)
           if (!board || !me) {
             await clearPersistQueueItem({ kind: 'member', boardId })
@@ -266,7 +335,7 @@ export function useApp() {
     } finally {
       flushingRef.current = false
     }
-  }, [])
+  }, [deletedIdsFor, rememberBaseline])
 
   const schedulePersist = useCallback(() => {
     if (persistTimerRef.current) clearTimeout(persistTimerRef.current)
@@ -311,6 +380,12 @@ export function useApp() {
           userId,
           displayName: profile.displayName,
           boards: import.meta.env.DEV ? withDevSampleLocations(boards, userId) : boards,
+        }
+        for (const board of nextState.boards) {
+          baselineCollectionsRef.current.set(
+            board.id,
+            board.collections.map((collection) => collection),
+          )
         }
         skipPersistRef.current = true
         setState(nextState)
@@ -389,41 +464,71 @@ export function useApp() {
     return subscribeToBoards(boardIds, (boardId) => {
       void (async () => {
         try {
-          const remote = await fetchBoard(boardId)
-          skipPersistRef.current = true
-          setState((prev) => {
-            if (!remote) {
-              return { ...prev, boards: prev.boards.filter((board) => board.id !== boardId) }
-            }
-            const exists = prev.boards.some((board) => board.id === boardId)
-            if (!exists) {
-              const next = import.meta.env.DEV
-                ? withDevSampleLocations([remote], prev.userId)[0]!
-                : remote
-              return { ...prev, boards: [next, ...prev.boards] }
-            }
-            const local = prev.boards.find((board) => board.id === boardId)
-            if (local && local.updatedAt > remote.updatedAt) return prev
-            return {
+          const remoteRaw = await fetchBoard(boardId)
+          if (!remoteRaw) {
+            skipPersistRef.current = true
+            baselineCollectionsRef.current.delete(boardId)
+            deletedCollectionsRef.current.delete(boardId)
+            setState((prev) => ({
               ...prev,
-              boards: prev.boards.map((board) =>
-                board.id === boardId
-                  ? import.meta.env.DEV
-                    ? withDevSampleLocations([remote], prev.userId)[0]!
-                    : remote
-                  : board,
-              ),
-            }
-          })
-          if (!remote) {
+              boards: prev.boards.filter((board) => board.id !== boardId),
+            }))
             setActiveBoardId((current) => (current === boardId ? null : current))
+            return
           }
+
+          const prev = stateRef.current
+          const remote = import.meta.env.DEV
+            ? withDevSampleLocations([remoteRaw], prev.userId)[0]!
+            : remoteRaw
+          const local = prev.boards.find((board) => board.id === boardId)
+          const dirty = dirtyBoardsRef.current.has(boardId)
+          const deletedIds = deletedIdsFor(boardId)
+          const hasLocalEdits = dirty || deletedIds.size > 0
+
+          if (!local) {
+            rememberBaseline(remote)
+            skipPersistRef.current = true
+            setState((current) => ({
+              ...current,
+              boards: current.boards.some((board) => board.id === boardId)
+                ? current.boards
+                : [remote, ...current.boards],
+            }))
+            return
+          }
+
+          if (hasLocalEdits) {
+            const baseline = baselineCollectionsRef.current.get(boardId) ?? remote.collections
+            const merged = mergeBoardFromRemote(remote, local, baseline, deletedIds)
+            baselineCollectionsRef.current.set(
+              boardId,
+              remote.collections.map((collection) => collection),
+            )
+            skipPersistRef.current = true
+            setState((current) => ({
+              ...current,
+              boards: current.boards.map((board) => (board.id === boardId ? merged : board)),
+            }))
+            markBoardDirty(boardId)
+            schedulePersist()
+            return
+          }
+
+          if (local.updatedAt > remote.updatedAt) return
+
+          rememberBaseline(remote)
+          skipPersistRef.current = true
+          setState((current) => ({
+            ...current,
+            boards: current.boards.map((board) => (board.id === boardId ? remote : board)),
+          }))
         } catch (error) {
           console.error('Realtime board refresh failed', error)
         }
       })()
     })
-  }, [ready, boardIdsKey, state.userId])
+  }, [ready, boardIdsKey, state.userId, deletedIdsFor, markBoardDirty, rememberBaseline, schedulePersist])
 
   useEffect(() => {
     stateRef.current = state
@@ -479,6 +584,7 @@ export function useApp() {
         const boardId = await createRemoteBoard(title, state.displayName)
         const board = await fetchBoard(boardId)
         if (!board) throw new Error('Created board could not be loaded')
+        rememberBaseline(board)
         skipPersistRef.current = true
         setState((prev) => ({ ...prev, boards: [board, ...prev.boards.filter((entry) => entry.id !== board.id)] }))
         setActiveBoardId(boardId)
@@ -487,7 +593,7 @@ export function useApp() {
         setBusy(false)
       }
     },
-    [state.displayName, state.userId],
+    [rememberBaseline, state.displayName, state.userId],
   )
 
   const joinBoard = useCallback(
@@ -510,6 +616,7 @@ export function useApp() {
         }
         const board = await fetchBoard(boardId)
         if (!board) return { ok: false, reason: 'Joined, but the board could not be loaded.' }
+        rememberBaseline(board)
         skipPersistRef.current = true
         setState((prev) => {
           const without = prev.boards.filter((entry) => entry.id !== board.id)
@@ -526,7 +633,7 @@ export function useApp() {
         setBusy(false)
       }
     },
-    [state.displayName],
+    [rememberBaseline, state.displayName],
   )
 
   const deleteBoard = useCallback(async (boardId: string) => {
@@ -621,25 +728,31 @@ export function useApp() {
   const upsertCollection = useCallback(
     (collection: Collection) => {
       if (!activeBoardId) return
+      const normalized: Collection = {
+        ...collection,
+        location: normalizeGeoLabel(collection.location),
+      }
+      clearCollectionDeleted(activeBoardId, normalized.id)
       markBoardDirty(activeBoardId)
       setState((prev) =>
         mapBoard(prev, activeBoardId, (board) => {
-          const exists = board.collections.some((entry) => entry.id === collection.id)
+          const exists = board.collections.some((entry) => entry.id === normalized.id)
           return {
             ...board,
             collections: exists
-              ? board.collections.map((entry) => (entry.id === collection.id ? collection : entry))
-              : [collection, ...board.collections],
+              ? board.collections.map((entry) => (entry.id === normalized.id ? normalized : entry))
+              : [normalized, ...board.collections],
           }
         }),
       )
     },
-    [activeBoardId, markBoardDirty],
+    [activeBoardId, clearCollectionDeleted, markBoardDirty],
   )
 
   const deleteCollection = useCallback(
     (id: string) => {
       if (!activeBoardId) return
+      markCollectionDeleted(activeBoardId, id)
       markBoardDirty(activeBoardId)
       setState((prev) =>
         mapBoard(prev, activeBoardId, (board) => {
@@ -652,7 +765,7 @@ export function useApp() {
         }),
       )
     },
-    [activeBoardId, markBoardDirty],
+    [activeBoardId, markBoardDirty, markCollectionDeleted],
   )
 
   const addItem = useCallback(
@@ -896,6 +1009,7 @@ export function useApp() {
                   : entry.reactions.filter((r) => r.emoji !== emoji)
                 return { ...entry, reactions }
               }),
+              updatedAt: new Date().toISOString(),
             }
           }),
         })),
@@ -1163,6 +1277,10 @@ export function useApp() {
     if (!result.ok) return result
     const profile = await loadProfile(result.userId)
     const boards = await fetchMyBoards()
+    baselineCollectionsRef.current = new Map(
+      boards.map((board) => [board.id, board.collections.map((collection) => collection)]),
+    )
+    deletedCollectionsRef.current = new Map()
     skipPersistRef.current = true
     setState({
       userId: result.userId,

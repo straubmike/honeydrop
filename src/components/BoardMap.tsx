@@ -58,7 +58,9 @@ export function BoardMap({
       .map((event) => ({
         id: `event-${event.id}`,
         point: event.location!,
-        label: event.title,
+        label: event.location?.label?.trim()
+          ? `${event.title} · ${event.location.label}`
+          : event.title,
         kind: 'event',
         onClick: () => onOpenEvent(event.id),
       }))

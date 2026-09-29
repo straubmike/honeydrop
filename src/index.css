@@ -699,6 +699,16 @@ img {
   font-weight: 650;
 }
 
+.event-card__location {
+  margin: 0.15rem 0 0;
+  font-size: 0.86rem;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
 .idea-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
@@ -1033,6 +1043,10 @@ img {
 .detail__when {
   margin: 0.45rem 0 0.7rem;
   font-weight: 600;
+}
+
+.detail__where {
+  margin: 0.15rem 0 0.7rem;
 }
 
 .detail__board {
