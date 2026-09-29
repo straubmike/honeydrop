@@ -27,15 +27,23 @@ export function LocationPicker({ value, onChange }: LocationPickerProps) {
 
   const apply = useCallback(
     async (point: GeoPoint) => {
-      const label = point.label ?? (await reversePlace(point.lat, point.lng))
+      const label =
+        point.label?.trim() ||
+        (await reversePlace(point.lat, point.lng)) ||
+        `${point.lat.toFixed(5)}, ${point.lng.toFixed(5)}`
       const next = { ...point, label }
       onChange(next)
       flyToPoint(map, next)
       setHits([])
-      setQuery(label ?? '')
+      setQuery(label)
     },
     [map, onChange],
   )
+
+  useEffect(() => {
+    if (!value?.label?.trim()) return
+    setQuery((current) => (current.trim() ? current : value.label!.trim()))
+  }, [value?.label])
 
   useEffect(() => {
     if (!map) return

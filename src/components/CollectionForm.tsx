@@ -53,6 +53,19 @@ export function CollectionForm({ kind, initial, defaultDate, onClose, onSave }: 
     }
 
     const now = new Date().toISOString()
+    const savedLocation =
+      kind === 'calendar'
+        ? location
+          ? {
+              lat: location.lat,
+              lng: location.lng,
+              label:
+                location.label?.trim() ||
+                `${location.lat.toFixed(5)}, ${location.lng.toFixed(5)}`,
+            }
+          : undefined
+        : initial?.location
+
     onSave({
       id: initial?.id ?? uid(),
       kind,
@@ -61,7 +74,7 @@ export function CollectionForm({ kind, initial, defaultDate, onClose, onSave }: 
       createdAt: initial?.createdAt ?? now,
       updatedAt: now,
       schedule,
-      location: kind === 'calendar' ? location : initial?.location,
+      location: savedLocation,
       coverPreview: initial?.coverPreview,
       items: initial?.items ?? [],
     })

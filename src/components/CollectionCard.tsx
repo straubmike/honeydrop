@@ -59,6 +59,9 @@ export function CollectionCard({ collection, onOpen, onFocusLocation }: Collecti
             {formatSchedule(collection.schedule, nextIso)}
             {repeat ? ` · ${repeat}` : ''}
           </p>
+          {collection.location?.label ? (
+            <p className="event-card__location muted">{collection.location.label}</p>
+          ) : null}
           {collection.description ? <p className="clamp">{collection.description}</p> : null}
           <p className="event-card__meta">
             {itemCount === 0 ? 'Empty event' : `${itemCount} ${itemCount === 1 ? 'item' : 'items'}`}

@@ -494,6 +494,9 @@ export function CollectionDetail({
             <span className="muted"> — next {formatLongDate(occurrence)}</span>
           </p>
         ) : null}
+        {collection.location?.label ? (
+          <p className="detail__where muted">{collection.location.label}</p>
+        ) : null}
         {collection.description ? <p className="lede">{collection.description}</p> : null}
       </div>
 
