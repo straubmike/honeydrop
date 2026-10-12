@@ -14,6 +14,34 @@ function newerCollection(a: Collection, b: Collection): Collection {
   return a.updatedAt >= b.updatedAt ? a : b
 }
 
+/** True when the ids `a` and `b` share appear in the same relative order. */
+function sameRelativeOrder(a: Collection[], b: Collection[]): boolean {
+  const inB = new Set(b.map((entry) => entry.id))
+  const inA = new Set(a.map((entry) => entry.id))
+  const sharedA = a.filter((entry) => inB.has(entry.id)).map((entry) => entry.id)
+  const sharedB = b.filter((entry) => inA.has(entry.id)).map((entry) => entry.id)
+  return sharedA.every((id, index) => id === sharedB[index])
+}
+
+/**
+ * Order ids by `primary`, then slot ids only found in `secondary` right after
+ * their nearest preceding neighbour from `secondary` (or at the front).
+ */
+function mergeOrder(primary: Collection[], secondary: Collection[]): string[] {
+  const order = primary.map((entry) => entry.id)
+  const placed = new Set(order)
+  let previous: string | null = null
+  for (const entry of secondary) {
+    if (!placed.has(entry.id)) {
+      const at = previous ? order.indexOf(previous) + 1 : 0
+      order.splice(at, 0, entry.id)
+      placed.add(entry.id)
+    }
+    previous = entry.id
+  }
+  return order
+}
+
 /**
  * Merge partner board JSON so event/idea deletes and location edits survive
  * full-document last-write-wins races.
@@ -71,20 +99,18 @@ export function mergeCollections(
     }
   }
 
-  // Prefer remote order, then append any local-only survivors in local order.
+  // Local order wins only if we reordered since baseline; otherwise follow the
+  // partner's order so their drags land. Entries unique to the other side keep
+  // their neighbourhood instead of being dumped at the end.
+  const localReordered = !sameRelativeOrder(local, baseline)
+  const orderIds = localReordered ? mergeOrder(local, remote) : mergeOrder(remote, local)
   const ordered: Collection[] = []
   const seen = new Set<string>()
-  for (const entry of remote) {
-    const merged = result.get(entry.id)
-    if (!merged || seen.has(entry.id)) continue
+  for (const id of orderIds) {
+    const merged = result.get(id)
+    if (!merged || seen.has(id)) continue
     ordered.push(merged)
-    seen.add(entry.id)
-  }
-  for (const entry of local) {
-    const merged = result.get(entry.id)
-    if (!merged || seen.has(entry.id)) continue
-    ordered.push(merged)
-    seen.add(entry.id)
+    seen.add(id)
   }
   for (const [id, merged] of result) {
     if (seen.has(id)) continue
