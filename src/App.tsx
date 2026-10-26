@@ -8,6 +8,7 @@ import { HomeView } from './components/HomeView'
 import { IdeasView } from './components/IdeasView'
 import { InstallPrompt } from './components/InstallPrompt'
 import { InviteModal } from './components/InviteModal'
+import { PencilHint } from './components/PencilHint'
 import { SyncStatusBanner } from './components/SyncStatusBanner'
 import { DemoModeBanner } from './components/DemoModeBanner'
 import {
@@ -20,6 +21,7 @@ import {
 } from './lib/routes'
 import type { BoardMember, Collection, CollectionKind, GeoPoint, Tab } from './types'
 import { useApp } from './useBoard'
+import { useOnboardingHints, useTouchDevice } from './useOnboardingHints'
 
 function boardSubtitle(members: BoardMember[]): string {
   const names = members.map((member) => member.name.trim() || 'You')
@@ -124,6 +126,22 @@ export default function App() {
   const partner = board?.members.find((member) => member.userId !== app.userId)
   const hasPartner = Boolean(partner)
   const me = board?.members.find((member) => member.userId === app.userId)
+  const hints = useOnboardingHints({
+    ready: app.ready,
+    hasBoards: app.boards.length > 0,
+    displayName: app.displayName,
+  })
+  const touch = useTouchDevice()
+  const nameHint = hints.current === 'name' ? `${touch ? 'tap' : 'click'} to add your name!` : null
+  const { complete: completeHint } = hints
+
+  useEffect(() => {
+    if (hasPartner) completeHint('invite')
+  }, [completeHint, hasPartner])
+
+  useEffect(() => {
+    if (tab === 'ideas') completeHint('tabs')
+  }, [completeHint, tab])
 
   const applyRoute = (route: AppRoute, mode: 'push' | 'replace' = 'replace') => {
     const write = mode === 'push' ? pushPath : replacePath
@@ -297,6 +315,8 @@ export default function App() {
           onDismissNotice={() => setRouteNotice(null)}
           syncBanner={syncBanner}
           installPrompt={<InstallPrompt />}
+          nameHint={nameHint}
+          nameInputProps={hints.nameInputProps}
         />
         {deviceLinkModal}
       </>
@@ -399,13 +419,16 @@ export default function App() {
               {me?.location ? (
                 <LocationPin label={me.name || 'You'} onClick={() => focusLocation(me.location!)} />
               ) : null}
-              <input
-                value={app.displayName}
-                onChange={(event) => app.setDisplayName(event.target.value)}
-                maxLength={32}
-                placeholder="You"
-                aria-label="Your name"
-              />
+              <PencilHint active={Boolean(nameHint)} text={nameHint ?? ''}>
+                <input
+                  {...hints.nameInputProps}
+                  value={app.displayName}
+                  onChange={(event) => app.setDisplayName(event.target.value)}
+                  maxLength={32}
+                  placeholder="You"
+                  aria-label="Your name"
+                />
+              </PencilHint>
             </div>
           </div>
           <div className="who">
@@ -428,36 +451,52 @@ export default function App() {
                   {partner?.name?.trim() || 'Partner'}
                 </button>
               ) : (
-                <button
-                  type="button"
-                  className="primary who__invite"
-                  onClick={() => setInviteOpen(true)}
-                  aria-label="Invite partner"
+                <PencilHint
+                  active={hints.current === 'invite'}
+                  text="invite your partner with a code!"
+                  placement="below-end"
                 >
-                  Invite code
-                </button>
+                  <button
+                    type="button"
+                    className="primary who__invite"
+                    onClick={() => {
+                      setInviteOpen(true)
+                      completeHint('invite')
+                    }}
+                    aria-label="Invite partner"
+                  >
+                    Invite code
+                  </button>
+                </PencilHint>
               )}
             </div>
           </div>
         </div>
       </header>
 
-      <nav className="tabs" aria-label="Board sections">
-        <button
-          type="button"
-          className={tab === 'calendar' ? 'tab tab--on' : 'tab'}
-          onClick={() => setTab('calendar')}
-        >
-          Calendar
-        </button>
-        <button
-          type="button"
-          className={tab === 'ideas' ? 'tab tab--on' : 'tab'}
-          onClick={() => setTab('ideas')}
-        >
-          Ideas
-        </button>
-      </nav>
+      <PencilHint
+        active={hints.current === 'tabs' && !inviteOpen}
+        text="add events or flip to drop ideas!"
+        placement="right"
+        className="pencil-hint--tabs"
+      >
+        <nav className="tabs" aria-label="Board sections">
+          <button
+            type="button"
+            className={tab === 'calendar' ? 'tab tab--on' : 'tab'}
+            onClick={() => setTab('calendar')}
+          >
+            Calendar
+          </button>
+          <button
+            type="button"
+            className={tab === 'ideas' ? 'tab tab--on' : 'tab'}
+            onClick={() => setTab('ideas')}
+          >
+            Ideas
+          </button>
+        </nav>
+      </PencilHint>
 
       {tab === 'calendar' ? (
         <CalendarView

@@ -1,8 +1,16 @@
-import { useEffect, useId, useState, type FormEvent, type ReactNode } from 'react'
+import {
+  useEffect,
+  useId,
+  useState,
+  type FormEvent,
+  type InputHTMLAttributes,
+  type ReactNode,
+} from 'react'
 import type { IdeaBoard } from '../types'
 import { BrandMark } from './BrandMark'
 import { DeviceLinkIcon } from './DeviceLinkModal'
 import { ModalBackdrop } from './ModalBackdrop'
+import { PencilHint } from './PencilHint'
 
 interface HomeViewProps {
   boards: IdeaBoard[]
@@ -14,6 +22,8 @@ interface HomeViewProps {
   onDismissNotice?: () => void
   syncBanner?: ReactNode
   installPrompt?: ReactNode
+  nameHint?: string | null
+  nameInputProps?: InputHTMLAttributes<HTMLInputElement>
   onDisplayName: (name: string) => void
   onOpen: (boardId: string) => void
   onCreate: (title: string) => void
@@ -45,6 +55,8 @@ export function HomeView({
   onDismissNotice,
   syncBanner,
   installPrompt,
+  nameHint = null,
+  nameInputProps,
   onDisplayName,
   onOpen,
   onCreate,
@@ -126,13 +138,16 @@ export function HomeView({
           </button>
           <label className="who">
             <span>Your name</span>
-            <input
-              value={displayName}
-              onChange={(event) => onDisplayName(event.target.value)}
-              maxLength={32}
-              placeholder="You"
-              aria-label="Your name"
-            />
+            <PencilHint active={Boolean(nameHint)} text={nameHint ?? ''} placement="below-end">
+              <input
+                {...nameInputProps}
+                value={displayName}
+                onChange={(event) => onDisplayName(event.target.value)}
+                maxLength={32}
+                placeholder="You"
+                aria-label="Your name"
+              />
+            </PencilHint>
           </label>
         </div>
       </header>
