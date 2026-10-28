@@ -9,6 +9,7 @@ export default defineConfig({
     linkPreviewPlugin(),
     VitePWA({
       registerType: 'prompt',
+      manifestFilename: 'manifest.json',
       includeAssets: ['favicon.svg', 'apple-touch-icon.png'],
       manifest: {
         name: 'Honey Drop',
@@ -41,7 +42,7 @@ export default defineConfig({
       },
       workbox: {
         navigateFallback: '/index.html',
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2,json}'],
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
