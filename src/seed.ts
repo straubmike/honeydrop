@@ -1,4 +1,4 @@
-import { toISODate, uid } from './dates'
+import { addDays, toISODate, uid } from './dates'
 import { createListEntry, stringifyList } from './list'
 import type { AppState, Collection, IdeaBoard, Item } from './types'
 
@@ -10,6 +10,16 @@ function daysFromNow(days: number): string {
   const date = new Date()
   date.setHours(12, 0, 0, 0)
   date.setDate(date.getDate() + days)
+  return toISODate(date)
+}
+
+/** Next Sunday on or after `minDaysAhead` — for demo multi-day bars that cross week rows. */
+function upcomingSunday(minDaysAhead = 14): string {
+  const date = new Date()
+  date.setHours(12, 0, 0, 0)
+  date.setDate(date.getDate() + minDaysAhead)
+  const delta = (7 - date.getDay()) % 7
+  date.setDate(date.getDate() + delta)
   return toISODate(date)
 }
 
@@ -42,16 +52,22 @@ export function seedState(): AppState {
   const partnerId = uid()
   const now = new Date().toISOString()
 
+  // Multi-day trip Sun→next Sun so the month grid shows a week bar + leftover segment.
+  const visitStart = upcomingSunday(14)
+  const visitEnd = addDays(visitStart, 7)
+  // Falls mid-trip so the month grid stacks a second lane/color under Visit FL.
+  const birthdayDate = addDays(visitStart, 3)
+
   const birthday: Collection = {
     id: uid(),
     kind: 'calendar',
-    title: "Alex's birthday",
+    title: "Mike's Birthday",
     description: 'Gift notes, cake ideas, and the soft plan for the day.',
     createdAt: ago(60 * 24 * 12),
     updatedAt: ago(40),
     schedule: {
-      startDate: daysFromNow(9),
-      endDate: daysFromNow(9),
+      startDate: birthdayDate,
+      endDate: birthdayDate,
       allDay: true,
       recurrence: 'yearly',
     },
@@ -153,6 +169,22 @@ export function seedState(): AppState {
     ],
   }
 
+  const visitFl: Collection = {
+    id: uid(),
+    kind: 'calendar',
+    title: 'Visit FL',
+    description: 'Week-plus trip — shows a continuous bar that restarts on the next Sunday.',
+    createdAt: ago(60 * 24 * 5),
+    updatedAt: ago(60),
+    schedule: {
+      startDate: visitStart,
+      endDate: visitEnd,
+      allDay: true,
+      recurrence: 'none',
+    },
+    items: [],
+  }
+
   const picnic: Collection = {
     id: uid(),
     kind: 'calendar',
@@ -232,7 +264,7 @@ export function seedState(): AppState {
             },
           },
         ],
-        collections: [birthday, picnic, gifts],
+        collections: [birthday, visitFl, picnic, gifts],
       },
     ],
   }
