@@ -1,4 +1,4 @@
-import { addDays, toISODate, uid } from './dates'
+import { toISODate, uid } from './dates'
 import { createListEntry, stringifyList } from './list'
 import type { AppState, Collection, IdeaBoard, Item } from './types'
 
@@ -10,16 +10,6 @@ function daysFromNow(days: number): string {
   const date = new Date()
   date.setHours(12, 0, 0, 0)
   date.setDate(date.getDate() + days)
-  return toISODate(date)
-}
-
-/** Next Sunday on or after `minDaysAhead` — for demo multi-day bars that cross week rows. */
-function upcomingSunday(minDaysAhead = 14): string {
-  const date = new Date()
-  date.setHours(12, 0, 0, 0)
-  date.setDate(date.getDate() + minDaysAhead)
-  const delta = (7 - date.getDay()) % 7
-  date.setDate(date.getDate() + delta)
   return toISODate(date)
 }
 
@@ -43,6 +33,16 @@ function item(
   }
 }
 
+/** Demo calendar month: prefer this year's Nov; if past Nov 29, use next year. */
+function demoNovemberYear(from = new Date()): number {
+  const year = from.getFullYear()
+  return from > new Date(year, 10, 29, 23, 59, 59) ? year + 1 : year
+}
+
+function novemberIso(year: number, day: number): string {
+  return toISODate(new Date(year, 10, day))
+}
+
 /**
  * Local demo board when Supabase env vars are missing.
  * Used by `loadApp()` on first open (empty localStorage).
@@ -52,22 +52,26 @@ export function seedState(): AppState {
   const partnerId = uid()
   const now = new Date().toISOString()
 
-  // Multi-day trip Sun→next Sun so the month grid shows a week bar + leftover segment.
-  const visitStart = upcomingSunday(14)
-  const visitEnd = addDays(visitStart, 7)
-  // Falls mid-trip so the month grid stacks a second lane/color under Visit FL.
-  const birthdayDate = addDays(visitStart, 3)
+  // Concrete November fixtures for multi-day + same-day stacking QA.
+  const novYear = demoNovemberYear()
+  const visitStart = novemberIso(novYear, 22)
+  const visitEnd = novemberIso(novYear, 29)
+  const stackDay = novemberIso(novYear, 24)
+  const overlapAStart = novemberIso(novYear, 16)
+  const overlapAEnd = novemberIso(novYear, 18)
+  const overlapBStart = novemberIso(novYear, 17)
+  const overlapBEnd = novemberIso(novYear, 19)
 
   const birthday: Collection = {
-    id: uid(),
+    id: 'seed-birthday',
     kind: 'calendar',
     title: "Mike's Birthday",
     description: 'Gift notes, cake ideas, and the soft plan for the day.',
     createdAt: ago(60 * 24 * 12),
     updatedAt: ago(40),
     schedule: {
-      startDate: birthdayDate,
-      endDate: birthdayDate,
+      startDate: stackDay,
+      endDate: stackDay,
       allDay: true,
       recurrence: 'yearly',
     },
@@ -115,6 +119,71 @@ export function seedState(): AppState {
         z: 3,
       }),
     ],
+  }
+
+  // Two more one-day events on Nov 24 → four stacked bars under Visit FL.
+  const brunch: Collection = {
+    id: 'seed-brunch',
+    kind: 'calendar',
+    title: 'Brunch',
+    description: 'Same-day stack under Visit FL (created after birthday).',
+    createdAt: ago(60 * 24 * 8),
+    updatedAt: ago(30),
+    schedule: {
+      startDate: stackDay,
+      endDate: stackDay,
+      allDay: true,
+      recurrence: 'none',
+    },
+    items: [],
+  }
+
+  const museum: Collection = {
+    id: 'seed-museum',
+    kind: 'calendar',
+    title: 'Museum',
+    description: 'Same-day stack under Visit FL (created last of the three).',
+    createdAt: ago(60 * 24 * 4),
+    updatedAt: ago(20),
+    schedule: {
+      startDate: stackDay,
+      endDate: stackDay,
+      allDay: true,
+      recurrence: 'none',
+    },
+    items: [],
+  }
+
+  const weekendA: Collection = {
+    id: 'seed-weekend-a',
+    kind: 'calendar',
+    title: 'Cabin',
+    description: 'Overlapping multi-day bar (Nov 16–18).',
+    createdAt: ago(60 * 24 * 20),
+    updatedAt: ago(50),
+    schedule: {
+      startDate: overlapAStart,
+      endDate: overlapAEnd,
+      allDay: true,
+      recurrence: 'none',
+    },
+    items: [],
+  }
+
+  const weekendB: Collection = {
+    id: 'seed-weekend-b',
+    kind: 'calendar',
+    title: 'Friends',
+    description: 'Overlapping multi-day bar (Nov 17–19).',
+    createdAt: ago(60 * 24 * 18),
+    updatedAt: ago(45),
+    schedule: {
+      startDate: overlapBStart,
+      endDate: overlapBEnd,
+      allDay: true,
+      recurrence: 'none',
+    },
+    items: [],
   }
 
   const gifts: Collection = {
@@ -170,11 +239,11 @@ export function seedState(): AppState {
   }
 
   const visitFl: Collection = {
-    id: uid(),
+    id: 'seed-visit-fl',
     kind: 'calendar',
     title: 'Visit FL',
-    description: 'Week-plus trip — shows a continuous bar that restarts on the next Sunday.',
-    createdAt: ago(60 * 24 * 5),
+    description: 'Nov 22–29 trip — continuous bar + leftover Sunday segment.',
+    createdAt: ago(60 * 24 * 14),
     updatedAt: ago(60),
     schedule: {
       startDate: visitStart,
@@ -264,7 +333,7 @@ export function seedState(): AppState {
             },
           },
         ],
-        collections: [birthday, visitFl, picnic, gifts],
+        collections: [birthday, brunch, museum, weekendA, weekendB, visitFl, picnic, gifts],
       },
     ],
   }
