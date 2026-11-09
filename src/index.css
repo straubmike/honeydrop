@@ -805,23 +805,9 @@ img {
   padding-right: 0.25rem;
 }
 
-.month__bar--dot {
-  background: transparent;
-  box-shadow: none;
-  padding-left: 0.2rem;
-  padding-right: 0.2rem;
-}
-
-.month__bar-dot {
-  flex: 0 0 auto;
-  width: 0.42rem;
-  height: 0.42rem;
-  border-radius: 99px;
-  background: var(--bar-color, var(--terracotta));
-}
-
 .month__bar-label {
   min-width: 0;
+  flex: 1 1 auto;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -836,11 +822,6 @@ img {
 
 .month__bar--on-light .month__bar-label {
   color: var(--ink);
-}
-
-.month__bar--dot .month__bar-label {
-  color: var(--muted);
-  font-weight: 500;
 }
 
 /* Legacy selectors kept harmless if referenced elsewhere */
@@ -2827,10 +2808,6 @@ body.draw-open {
 
   .month__bar-label {
     font-size: 0.62rem;
-  }
-
-  .month__bar--dot .month__bar-label {
-    display: none;
   }
 
   .shell {

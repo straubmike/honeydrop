@@ -81,11 +81,20 @@ export function eventRangesInMonth(
   return ranges
 }
 
-function compareRanges(a: MonthEventRange, b: MonthEventRange): number {
-  if (a.startIso !== b.startIso) return a.startIso < b.startIso ? -1 : 1
-  const spanA = rangeLength(a.startIso, a.endIso)
-  const spanB = rangeLength(b.startIso, b.endIso)
-  if (spanA !== spanB) return spanB - spanA
+/** Sort key for lane/color order: start date+time, then createdAt, then id. */
+function scheduleStartMoment(collection: Collection, startIso: string): string {
+  const schedule = collection.schedule
+  if (!schedule || schedule.allDay || !schedule.startTime) return `${startIso}T00:00`
+  return `${startIso}T${schedule.startTime}`
+}
+
+function compareRangeOrder(a: MonthEventRange, b: MonthEventRange): number {
+  const startA = scheduleStartMoment(a.collection, a.startIso)
+  const startB = scheduleStartMoment(b.collection, b.startIso)
+  if (startA !== startB) return startA < startB ? -1 : 1
+  if (a.collection.createdAt !== b.collection.createdAt) {
+    return a.collection.createdAt < b.collection.createdAt ? -1 : 1
+  }
   return a.collection.id.localeCompare(b.collection.id)
 }
 
@@ -133,7 +142,7 @@ export function layoutMonthWeeks(
   year: number,
   month: number,
 ): MonthWeekLayout[] {
-  const ranges = [...eventRangesInMonth(collections, year, month)].sort(compareRanges)
+  const ranges = [...eventRangesInMonth(collections, year, month)].sort(compareRangeOrder)
   const weeks = chunkWeeks(cells)
 
   return weeks.map((weekCells, weekIndex) => {
@@ -152,6 +161,7 @@ export function layoutMonthWeeks(
       endCol: number
       startIso: string
       endIso: string
+      rangeStartIso: string
       singleDayEvent: boolean
       continuesLeft: boolean
       continuesRight: boolean
@@ -175,19 +185,19 @@ export function layoutMonthWeeks(
         endCol,
         startIso: segStart,
         endIso: segEnd,
+        rangeStartIso: range.startIso,
         singleDayEvent: fullSpan === 0,
         continuesLeft: range.startIso < segStart,
         continuesRight: range.endIso > segEnd,
       })
     }
 
-    drafts.sort((a, b) => {
-      if (a.startCol !== b.startCol) return a.startCol - b.startCol
-      const spanA = a.endCol - a.startCol
-      const spanB = b.endCol - b.startCol
-      if (spanA !== spanB) return spanB - spanA
-      return a.collection.id.localeCompare(b.collection.id)
-    })
+    drafts.sort((a, b) =>
+      compareRangeOrder(
+        { collection: a.collection, startIso: a.rangeStartIso, endIso: a.endIso },
+        { collection: b.collection, startIso: b.rangeStartIso, endIso: b.endIso },
+      ),
+    )
 
     const lanes = assignLanes(drafts)
     const segments: MonthBarSegment[] = drafts.map((draft, index) => {

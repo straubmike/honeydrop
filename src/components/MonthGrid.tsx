@@ -101,7 +101,7 @@ export function MonthGrid({
                   const startIso = segmentDayIso(week.cells, segment.startCol)
                   const classes = [
                     'month__bar',
-                    segment.singleDayEvent ? 'month__bar--dot' : 'month__bar--span',
+                    'month__bar--span',
                     segment.continuesLeft ? 'month__bar--continues-left' : '',
                     segment.continuesRight ? 'month__bar--continues-right' : '',
                     segment.labelOnDark ? 'month__bar--on-dark' : 'month__bar--on-light',
@@ -118,16 +118,13 @@ export function MonthGrid({
                       style={{
                         gridColumn: `${segment.startCol + 1} / ${segment.endCol + 2}`,
                         gridRow: segment.lane + 1,
-                        ...(segment.singleDayEvent
-                          ? { ['--bar-color' as string]: segment.color }
-                          : { backgroundColor: segment.color }),
+                        backgroundColor: segment.color,
                       }}
                       onClick={(event) => {
                         event.stopPropagation()
                         if (startIso) onSelectDate(startIso)
                       }}
                     >
-                      {segment.singleDayEvent ? <span className="month__bar-dot" aria-hidden="true" /> : null}
                       <span className="month__bar-label">{segment.collection.title}</span>
                     </button>
                   )
