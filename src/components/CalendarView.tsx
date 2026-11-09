@@ -2,7 +2,8 @@ import { CollectionCard } from './CollectionCard'
 import { MonthGrid } from './MonthGrid'
 import { BoardMap } from './BoardMap'
 import type { BoardMember, Collection, GeoPoint } from '../types'
-import { compareUpcoming, datesInMonth, formatLongDate } from '../dates'
+import { compareUpcoming, formatLongDate } from '../dates'
+import { compareRangeOrder, eventRangesInMonth } from '../monthLayout'
 
 interface CalendarViewProps {
   collections: Collection[]
@@ -37,9 +38,12 @@ export function CalendarView({
 }: CalendarViewProps) {
   const events = collections.filter((collection) => collection.kind === 'calendar')
   const monthEvents = selectedDate
-    ? events.filter((collection) =>
-        datesInMonth(collection, cursor.getFullYear(), cursor.getMonth()).includes(selectedDate),
-      )
+    ? eventRangesInMonth(events, cursor.getFullYear(), cursor.getMonth())
+        .filter(
+          (range) => selectedDate >= range.startIso && selectedDate <= range.endIso,
+        )
+        .sort(compareRangeOrder)
+        .map((range) => range.collection)
     : [...events].sort(compareUpcoming)
 
   return (

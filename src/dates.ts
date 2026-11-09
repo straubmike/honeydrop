@@ -170,14 +170,40 @@ export function nextOccurrenceStart(schedule: Schedule, from = new Date()): Date
   return candidate
 }
 
+/** Sort key for calendar lanes + day Upcoming: start date+time, then createdAt, then id. */
+export function scheduleStartMoment(collection: Collection, startIso: string): string {
+  const schedule = collection.schedule
+  if (!schedule || schedule.allDay || !schedule.startTime) return `${startIso}T00:00`
+  return `${startIso}T${schedule.startTime}`
+}
+
+/** Shared comparator for month bars and the selected-day Upcoming list. */
+export function compareCollectionScheduleOrder(
+  a: Collection,
+  b: Collection,
+  startIsoA: string,
+  startIsoB: string,
+): number {
+  const startA = scheduleStartMoment(a, startIsoA)
+  const startB = scheduleStartMoment(b, startIsoB)
+  if (startA !== startB) return startA < startB ? -1 : 1
+  if (a.createdAt !== b.createdAt) {
+    return a.createdAt < b.createdAt ? -1 : 1
+  }
+  return a.id.localeCompare(b.id)
+}
+
 export function compareUpcoming(a: Collection, b: Collection): number {
   const now = Date.now()
-  const da = a.schedule ? nextOccurrenceStart(a.schedule).getTime() : 0
-  const db = b.schedule ? nextOccurrenceStart(b.schedule).getTime() : 0
+  const startA = a.schedule ? nextOccurrenceStart(a.schedule) : new Date(0)
+  const startB = b.schedule ? nextOccurrenceStart(b.schedule) : new Date(0)
+  const da = startA.getTime()
+  const db = startB.getTime()
   const aPast = a.schedule?.recurrence === 'none' && da < now
   const bPast = b.schedule?.recurrence === 'none' && db < now
   if (aPast !== bPast) return aPast ? 1 : -1
-  return da - db
+  if (da !== db) return da - db
+  return compareCollectionScheduleOrder(a, b, toISODate(startA), toISODate(startB))
 }
 
 export function monthCells(year: number, month: number): Array<Date | null> {
