@@ -1,5 +1,5 @@
 import { DRAW_COLORS } from './drawing'
-import { parseISODate, rangeLength, toISODate } from './dates'
+import { compareCollectionScheduleOrder, parseISODate, rangeLength, toISODate } from './dates'
 import type { Collection } from './types'
 
 export type MonthCell = Date | null
@@ -81,21 +81,14 @@ export function eventRangesInMonth(
   return ranges
 }
 
-/** Sort key for lane/color order: start date+time, then createdAt, then id. */
-function scheduleStartMoment(collection: Collection, startIso: string): string {
-  const schedule = collection.schedule
-  if (!schedule || schedule.allDay || !schedule.startTime) return `${startIso}T00:00`
-  return `${startIso}T${schedule.startTime}`
-}
-
-function compareRangeOrder(a: MonthEventRange, b: MonthEventRange): number {
-  const startA = scheduleStartMoment(a.collection, a.startIso)
-  const startB = scheduleStartMoment(b.collection, b.startIso)
-  if (startA !== startB) return startA < startB ? -1 : 1
-  if (a.collection.createdAt !== b.collection.createdAt) {
-    return a.collection.createdAt < b.collection.createdAt ? -1 : 1
-  }
-  return a.collection.id.localeCompare(b.collection.id)
+/** Shared with the day Upcoming list so calendar bars and list cannot drift. */
+export function compareRangeOrder(a: MonthEventRange, b: MonthEventRange): number {
+  return compareCollectionScheduleOrder(
+    a.collection,
+    b.collection,
+    a.startIso,
+    b.startIso,
+  )
 }
 
 function colorForLane(lane: number): { color: string; labelOnDark: boolean } {
