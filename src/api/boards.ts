@@ -1,4 +1,5 @@
 import { createInviteCode } from '../lib/inviteCode'
+import { recordAccountSignup } from '../lib/signupTelemetry'
 import { getSupabase } from '../lib/supabase'
 import type { Collection, GeoPoint, IdeaBoard, BoardMember } from '../types'
 
@@ -51,6 +52,9 @@ export async function ensureAnonymousSession(): Promise<{ userId: string }> {
   const { data, error } = await supabase.auth.signInAnonymously()
   if (error) throw error
   if (!data.user?.id) throw new Error('Anonymous sign-in failed')
+  // Best-effort telemetry for brand-new anonymous accounts only (not restored sessions).
+  // Must never block or fail sign-in.
+  void recordAccountSignup(data.user.id)
   return { userId: data.user.id }
 }
 
