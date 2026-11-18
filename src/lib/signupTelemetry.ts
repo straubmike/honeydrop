@@ -71,22 +71,22 @@ export async function recordAccountSignup(userId: string): Promise<void> {
   try {
     const env = parseClientEnvironment()
     const supabase = getSupabase()
-    const { error } = await supabase.from('account_signups').upsert(
-      {
-        user_id: userId,
-        user_agent: env.userAgent || null,
-        device_type: env.deviceType,
-        browser: env.browser,
-        os: env.os,
-        is_standalone: env.isStandalone,
-        referrer: env.referrer,
-        site_host: env.siteHost,
-        src: getStoredSrc(),
-        is_tester: isTesterFlagSet(),
-      },
-      { onConflict: 'user_id', ignoreDuplicates: true },
-    )
-    if (error) {
+    // Plain INSERT only — no .select(). Upsert/ignoreDuplicates needs SELECT,
+    // which this table intentionally lacks (INSERT-only RLS for clients).
+    const { error } = await supabase.from('account_signups').insert({
+      user_id: userId,
+      user_agent: env.userAgent || null,
+      device_type: env.deviceType,
+      browser: env.browser,
+      os: env.os,
+      is_standalone: env.isStandalone,
+      referrer: env.referrer,
+      site_host: env.siteHost,
+      src: getStoredSrc(),
+      is_tester: isTesterFlagSet(),
+    })
+    // Duplicate primary key: row already exists; treat as success.
+    if (error && error.code !== '23505') {
       console.warn('[honeydrop] account signup telemetry skipped:', error.message)
     }
   } catch (error) {
