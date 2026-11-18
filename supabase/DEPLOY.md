@@ -6,7 +6,8 @@
 4. Run `supabase/migrations/002_device_links.sql` (phone ↔ desktop “Use another device” codes).
 5. Run `supabase/migrations/003_seat_recovery.sql` (partner “lost access” seat reclaim codes).
 6. Run `supabase/migrations/004_device_link_session.sql` (device link keeps boards on **both** devices).
-7. Deploy edge functions (**required after any `link-api` / `previewCore` change — frontend auto-deploy does not update edge**):
+7. Run `supabase/migrations/005_account_signups.sql` (anonymous signup telemetry; no FK so cleanups keep rows).
+8. Deploy edge functions (**required after any `link-api` / `previewCore` change — frontend auto-deploy does not update edge**):
 
 ```bash
 npx supabase login

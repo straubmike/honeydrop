@@ -9,6 +9,8 @@ Installable Progressive Web App (Android/Oppo first). No App Store / Play Store 
    - `supabase/migrations/001_init.sql`
    - `supabase/migrations/002_device_links.sql`
    - `supabase/migrations/003_seat_recovery.sql` ← **required for partner seat recovery**
+   - `supabase/migrations/004_device_link_session.sql`
+   - `supabase/migrations/005_account_signups.sql` ← signup telemetry for the private dashboard
 3. Confirm the host serves the SPA for deep links (all paths → `index.html`):
    - nginx: `try_files $uri $uri/ /index.html;`
    - Netlify-style: `public/_redirects` is included in `dist/`
