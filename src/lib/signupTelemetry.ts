@@ -1,5 +1,5 @@
 import { getSupabase } from './supabase'
-import { isTesterFlagSet } from './testerFlag'
+import { getStoredSrc, isTesterFlagSet } from './testerFlag'
 
 export type DeviceType = 'phone' | 'tablet' | 'desktop'
 
@@ -10,6 +10,7 @@ export type ClientEnvironment = {
   os: string
   isStandalone: boolean
   referrer: string | null
+  siteHost: string | null
 }
 
 export function detectStandalone(): boolean {
@@ -24,6 +25,7 @@ export function detectStandalone(): boolean {
 export function parseClientEnvironment(
   userAgent = typeof navigator !== 'undefined' ? navigator.userAgent : '',
   referrer = typeof document !== 'undefined' ? document.referrer : '',
+  siteHost = typeof window !== 'undefined' ? window.location.host : '',
 ): ClientEnvironment {
   const ua = userAgent || ''
   const lower = ua.toLowerCase()
@@ -57,6 +59,7 @@ export function parseClientEnvironment(
     os,
     isStandalone: detectStandalone(),
     referrer: referrer?.trim() ? referrer.trim() : null,
+    siteHost: siteHost?.trim() ? siteHost.trim() : null,
   }
 }
 
@@ -77,6 +80,8 @@ export async function recordAccountSignup(userId: string): Promise<void> {
         os: env.os,
         is_standalone: env.isStandalone,
         referrer: env.referrer,
+        site_host: env.siteHost,
+        src: getStoredSrc(),
         is_tester: isTesterFlagSet(),
       },
       { onConflict: 'user_id', ignoreDuplicates: true },

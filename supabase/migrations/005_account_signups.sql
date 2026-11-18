@@ -14,6 +14,8 @@ create table if not exists public.account_signups (
   os text,
   is_standalone boolean,
   referrer text,
+  site_host text,
+  src text,
   is_tester boolean not null default false
 );
 
