@@ -242,6 +242,41 @@ export async function persistBoard(board: IdeaBoard): Promise<void> {
   if (error) throw error
 }
 
+export type ToggleReactionResult = {
+  ok: true
+  board_id: string
+  collection_id: string
+  item_id: string
+  emoji: string
+  action: 'added' | 'removed'
+  reactions: import('../types').Reaction[]
+}
+
+/**
+ * Atomically toggle the caller's reaction on one drop (RPC).
+ * Does not rewrite the whole collections blob — safe under concurrent partners.
+ */
+export async function toggleItemReaction(
+  boardId: string,
+  collectionId: string,
+  itemId: string,
+  emoji: string,
+): Promise<ToggleReactionResult> {
+  const supabase = getSupabase()
+  const { data, error } = await supabase.rpc('toggle_item_reaction', {
+    p_board_id: boardId,
+    p_collection_id: collectionId,
+    p_item_id: itemId,
+    p_emoji: emoji,
+  })
+  if (error) throw error
+  const row = data as ToggleReactionResult | null
+  if (!row?.ok || !Array.isArray(row.reactions)) {
+    throw new Error('toggle_item_reaction returned an unexpected payload')
+  }
+  return row
+}
+
 export async function persistMyMembership(
   boardId: string,
   userId: string,

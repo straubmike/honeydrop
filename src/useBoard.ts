@@ -12,6 +12,7 @@ import {
   persistMyMembership,
   signOutLocal,
   subscribeToBoards,
+  toggleItemReaction,
   updateProfileName,
   verifySessionUser,
 } from './api/boards'
@@ -57,6 +58,7 @@ import type {
   GeoPoint,
   Item,
   NewItemInput,
+  Reaction,
   Reply,
 } from './types'
 
@@ -559,8 +561,9 @@ export function useApp() {
             return
           }
 
-          if (local.updatedAt > remote.updatedAt) return
-
+          // Always apply remote when local has no pending writes. Skipping on
+          // local.updatedAt > remote.updatedAt dropped partner reaction RPCs
+          // (and other nested JSONB edits) until a full reload.
           rememberBaseline(remote)
           skipPersistRef.current = true
           setState((current) => ({
@@ -1023,13 +1026,52 @@ export function useApp() {
     [activeBoardId, markBoardDirty],
   )
 
+  const applyItemReactions = useCallback(
+    (boardId: string, collectionId: string, itemId: string, reactions: Reaction[]) => {
+      skipPersistRef.current = true
+      setState((prev) =>
+        mapBoard(prev, boardId, (board) => ({
+          ...board,
+          collections: board.collections.map((collection) => {
+            if (collection.id !== collectionId) return collection
+            return {
+              ...collection,
+              items: collection.items.map((entry) =>
+                entry.id === itemId ? { ...entry, reactions } : entry,
+              ),
+            }
+          }),
+        })),
+      )
+    },
+    [],
+  )
+
   const toggleReaction = useCallback(
     (collectionId: string, itemId: string, emoji: string) => {
       if (!activeBoardId) return
       const authorId = state.userId
-      markBoardDirty(activeBoardId)
+      const boardId = activeBoardId
+
+      const nextReactionsFor = (entry: Item): Reaction[] => {
+        const existing = entry.reactions.find((r) => r.emoji === emoji)
+        if (!existing) {
+          return [...entry.reactions, { emoji, authorIds: [authorId] }]
+        }
+        const hasMine = existing.authorIds.includes(authorId)
+        const authorIds = hasMine
+          ? existing.authorIds.filter((id) => id !== authorId)
+          : [...existing.authorIds, authorId]
+        return authorIds.length
+          ? entry.reactions.map((r) => (r.emoji === emoji ? { ...r, authorIds } : r))
+          : entry.reactions.filter((r) => r.emoji !== emoji)
+      }
+
+      // Optimistic UI. Do NOT markBoardDirty — reactions persist via RPC so a
+      // full-bundle save cannot overwrite a concurrent partner toggle.
+      skipPersistRef.current = true
       setState((prev) =>
-        mapBoard(prev, activeBoardId, (board) => ({
+        mapBoard(prev, boardId, (board) => ({
           ...board,
           collections: board.collections.map((collection) => {
             if (collection.id !== collectionId) return collection
@@ -1037,29 +1079,44 @@ export function useApp() {
               ...collection,
               items: collection.items.map((entry) => {
                 if (entry.id !== itemId) return entry
-                const existing = entry.reactions.find((r) => r.emoji === emoji)
-                if (!existing) {
-                  return {
-                    ...entry,
-                    reactions: [...entry.reactions, { emoji, authorIds: [authorId] }],
-                  }
-                }
-                const hasMine = existing.authorIds.includes(authorId)
-                const authorIds = hasMine
-                  ? existing.authorIds.filter((id) => id !== authorId)
-                  : [...existing.authorIds, authorId]
-                const reactions = authorIds.length
-                  ? entry.reactions.map((r) => (r.emoji === emoji ? { ...r, authorIds } : r))
-                  : entry.reactions.filter((r) => r.emoji !== emoji)
-                return { ...entry, reactions }
+                return { ...entry, reactions: nextReactionsFor(entry) }
               }),
               updatedAt: new Date().toISOString(),
             }
           }),
         })),
       )
+
+      if (!isSupabaseConfigured) return
+
+      void (async () => {
+        try {
+          const result = await toggleItemReaction(boardId, collectionId, itemId, emoji)
+          applyItemReactions(boardId, collectionId, itemId, result.reactions)
+        } catch (error) {
+          console.error('Failed to toggle reaction', error)
+          // Resync from server so we do not keep a wrong optimistic state.
+          try {
+            const remote = await fetchBoard(boardId)
+            if (!remote) return
+            const local = stateRef.current.boards.find((board) => board.id === boardId)
+            if (!local) return
+            const deletedIds = deletedIdsFor(boardId)
+            const baseline = baselineCollectionsRef.current.get(boardId) ?? remote.collections
+            const merged = mergeBoardFromRemote(remote, local, baseline, deletedIds)
+            rememberBaseline(remote)
+            skipPersistRef.current = true
+            setState((current) => ({
+              ...current,
+              boards: current.boards.map((board) => (board.id === boardId ? merged : board)),
+            }))
+          } catch (resyncError) {
+            console.error('Reaction resync failed', resyncError)
+          }
+        }
+      })()
     },
-    [activeBoardId, markBoardDirty, state.userId],
+    [activeBoardId, applyItemReactions, deletedIdsFor, rememberBaseline, state.userId],
   )
 
   const addReply = useCallback(

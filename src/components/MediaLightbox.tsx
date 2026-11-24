@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { fetchLinkImageBlob } from '../linkPreview'
 import type { Attachment } from '../types'
@@ -20,6 +20,10 @@ function readHistoryState(): HistoryState {
 
 function isLightboxHistoryState(state: HistoryState): boolean {
   return Boolean(state && state[LIGHTBOX_STATE_KEY])
+}
+
+function currentHref(): string {
+  return `${window.location.pathname}${window.location.search}${window.location.hash}`
 }
 
 function useRemoteImageSrc(url: string): string | null | undefined {
@@ -112,28 +116,43 @@ export function MediaLightbox({
   const closingRef = useRef(false)
   /** True when this mount pushed (or adopted) a lightbox history entry. */
   const ownsEntryRef = useRef(false)
+  /** Href at open — × / Escape / Back must never leave this idea/event URL. */
+  const stayHrefRef = useRef(currentHref())
 
   useEffect(() => {
     onCloseRef.current = onClose
   }, [onClose])
 
-  // Push a same-URL history entry so mobile Back closes the slideshow only
-  // (collection /board/<id>/c/<collectionId> routing stays put).
-  useEffect(() => {
+  // useLayoutEffect so the history entry exists before paint / synthetic Escape
+  // (automated open paths were racing useEffect and overshooting on ×).
+  useLayoutEffect(() => {
     closedByPopRef.current = false
     closingRef.current = false
     ownsEntryRef.current = false
+    stayHrefRef.current = currentHref()
 
     if (!isLightboxHistoryState(readHistoryState())) {
       const prev = readHistoryState()
       window.history.pushState(
         { ...(prev ?? {}), [LIGHTBOX_STATE_KEY]: true },
         '',
-        `${window.location.pathname}${window.location.search}${window.location.hash}`,
+        stayHrefRef.current,
       )
       ownsEntryRef.current = true
     } else {
       ownsEntryRef.current = true
+    }
+
+    const restoreStayHref = () => {
+      if (currentHref() === stayHrefRef.current) return
+      const prev = readHistoryState() ?? {}
+      const next = { ...prev }
+      delete next[LIGHTBOX_STATE_KEY]
+      window.history.pushState(
+        Object.keys(next).length ? next : null,
+        '',
+        stayHrefRef.current,
+      )
     }
 
     const onPop = () => {
@@ -141,6 +160,8 @@ export function MediaLightbox({
       closingRef.current = true
       ownsEntryRef.current = false
       onCloseRef.current()
+      // If Back overshot past the idea/event (thin stack / orphan entries), put it back.
+      restoreStayHref()
     }
     window.addEventListener('popstate', onPop)
     return () => {
@@ -154,7 +175,7 @@ export function MediaLightbox({
         window.history.replaceState(
           Object.keys(next).length ? next : null,
           '',
-          `${window.location.pathname}${window.location.search}${window.location.hash}`,
+          currentHref(),
         )
         ownsEntryRef.current = false
       }
@@ -164,12 +185,24 @@ export function MediaLightbox({
   const requestClose = () => {
     if (closingRef.current) return
     closingRef.current = true
-    // Only pop when our lightbox entry is still on the stack — never double-back.
+    // Prefer popping our entry so Back stack stays clean. Guard + stayHref restore
+    // so × / Escape never overshoots to boards (including automated open paths).
     if (ownsEntryRef.current && isLightboxHistoryState(readHistoryState())) {
       window.history.back()
       return
     }
     ownsEntryRef.current = false
+    closedByPopRef.current = true
+    if (isLightboxHistoryState(readHistoryState())) {
+      const prev = readHistoryState() ?? {}
+      const next = { ...prev }
+      delete next[LIGHTBOX_STATE_KEY]
+      window.history.replaceState(
+        Object.keys(next).length ? next : null,
+        '',
+        stayHrefRef.current,
+      )
+    }
     onClose()
   }
 

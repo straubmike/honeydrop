@@ -1,4 +1,4 @@
-import type { Collection, IdeaBoard } from './types'
+import type { Collection, IdeaBoard, Item } from './types'
 
 /** Normalize a place so lat/lng pins always carry display text when possible. */
 export function normalizeGeoLabel(
@@ -12,6 +12,32 @@ export function normalizeGeoLabel(
 
 function newerCollection(a: Collection, b: Collection): Collection {
   return a.updatedAt >= b.updatedAt ? a : b
+}
+
+/**
+ * Prefer the newer collection document, but take per-item reactions from
+ * `remote` whenever that item exists there. Reactions are server-authoritative
+ * via `toggle_item_reaction`, so a local caption/edit must not wipe a partner
+ * toggle (and a local stale copy must not resurrect a removed reaction).
+ */
+function mergeCollectionPair(local: Collection, remote: Collection): Collection {
+  const base = newerCollection(local, remote)
+  const remoteById = new Map(remote.items.map((item) => [item.id, item]))
+  const localOnly = local.items.filter((item) => !remoteById.has(item.id))
+  const baseIds = new Set(base.items.map((item) => item.id))
+
+  const items: Item[] = base.items.map((item) => {
+    const remoteItem = remoteById.get(item.id)
+    if (!remoteItem) return item
+    return { ...item, reactions: remoteItem.reactions ?? [] }
+  })
+
+  for (const item of localOnly) {
+    if (baseIds.has(item.id)) continue
+    items.push(item)
+  }
+
+  return { ...base, items }
 }
 
 /** True when the ids `a` and `b` share appear in the same relative order. */
@@ -74,7 +100,7 @@ export function mergeCollections(
     const baselineEntry = baselineById.get(id)
 
     if (localEntry && remoteEntry) {
-      result.set(id, newerCollection(localEntry, remoteEntry))
+      result.set(id, mergeCollectionPair(localEntry, remoteEntry))
       continue
     }
 
