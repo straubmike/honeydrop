@@ -38,9 +38,16 @@ export function useOsmMap(scrollWheelZoom = true) {
     return () => {
       cancelAnimationFrame(frame)
       observer.disconnect()
-      instance.remove()
+      // Abrupt modal teardown (e.g. Android Back before a history barrier) can
+      // detach the container mid-remove — never let Leaflet throw into React.
+      try {
+        instance.remove()
+      } catch {
+        /* ignore */
+      }
       mapRef.current = null
-      setMap(null)
+      // Do not setMap(null) here: this cleanup often runs while the modal tree
+      // is already unmounting, and a setState can crash the app.
     }
   }, [scrollWheelZoom])
 
@@ -101,8 +108,16 @@ function addMapPin(map: L.Map, pin: MapPin) {
   )
   return {
     remove: () => {
-      marker.remove()
-      root.unmount()
+      try {
+        marker.remove()
+      } catch {
+        /* ignore */
+      }
+      try {
+        root.unmount()
+      } catch {
+        /* ignore */
+      }
     },
   }
 }

@@ -15,7 +15,7 @@ import { Composer } from './Composer'
 import { DrawingCanvas } from './DrawingCanvas'
 import { ItemCard } from './ItemCard'
 import { ListEditor } from './ListEditor'
-import { ModalBackdrop } from './ModalBackdrop'
+import { ModalBackdrop, ModalDismissButton } from './ModalBackdrop'
 
 interface CollectionDetailProps {
   collection: Collection
@@ -623,9 +623,9 @@ export function CollectionDetail({
               removed; when and where are saved as a text drop if this event had them.
             </p>
             <div className="modal__actions">
-              <button type="button" className="ghost" onClick={() => setConfirmConvert(false)}>
+              <ModalDismissButton className="ghost" onClose={() => setConfirmConvert(false)}>
                 Cancel
-              </button>
+              </ModalDismissButton>
               <button
                 type="button"
                 className="primary"
@@ -660,9 +660,9 @@ export function CollectionDetail({
               undone.
             </p>
             <div className="modal__actions">
-              <button type="button" className="ghost" onClick={() => setConfirmDelete(false)}>
+              <ModalDismissButton className="ghost" onClose={() => setConfirmDelete(false)}>
                 Cancel
-              </button>
+              </ModalDismissButton>
               <button
                 type="button"
                 className="primary primary--danger"

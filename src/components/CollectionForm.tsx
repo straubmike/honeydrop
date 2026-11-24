@@ -1,5 +1,6 @@
 import { useEffect, useId, useState, type FormEvent } from 'react'
 import { uid } from '../dates'
+import { useModalClose } from '../lib/historyBarrier'
 import type { Collection, CollectionKind, GeoPoint, Recurrence, Schedule } from '../types'
 import { LocationPicker } from './LocationPicker'
 import { ModalBackdrop } from './ModalBackdrop'
@@ -12,7 +13,14 @@ interface CollectionFormProps {
   onSave: (collection: Collection) => void
 }
 
-export function CollectionForm({ kind, initial, defaultDate, onClose, onSave }: CollectionFormProps) {
+function CollectionFormBody({
+  kind,
+  initial,
+  defaultDate,
+  onClose,
+  onSave,
+}: CollectionFormProps) {
+  const close = useModalClose(onClose)
   const headingId = useId()
   const today = new Date().toISOString().slice(0, 10)
   const [title, setTitle] = useState(initial?.title ?? '')
@@ -27,11 +35,11 @@ export function CollectionForm({ kind, initial, defaultDate, onClose, onSave }: 
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose()
+      if (event.key === 'Escape') close()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
+  }, [close])
 
   const submit = (event: FormEvent) => {
     event.preventDefault()
@@ -81,111 +89,117 @@ export function CollectionForm({ kind, initial, defaultDate, onClose, onSave }: 
   }
 
   return (
-    <ModalBackdrop onClose={onClose}>
-      <form
-        className="modal"
-        role="dialog"
-        aria-labelledby={headingId}
-        aria-modal="true"
-        onClick={(event) => event.stopPropagation()}
-        onSubmit={submit}
-      >
-        <header className="modal__header">
-          <h2 id={headingId}>
-            {initial ? 'Edit' : 'New'} {kind === 'calendar' ? 'event' : 'idea'}
-          </h2>
-        </header>
+    <form
+      className="modal"
+      role="dialog"
+      aria-labelledby={headingId}
+      aria-modal="true"
+      onClick={(event) => event.stopPropagation()}
+      onSubmit={submit}
+    >
+      <header className="modal__header">
+        <h2 id={headingId}>
+          {initial ? 'Edit' : 'New'} {kind === 'calendar' ? 'event' : 'idea'}
+        </h2>
+      </header>
 
-        <label className="field">
-          <span>Title</span>
-          <input
-            value={title}
-            onChange={(event) => setTitle(event.target.value)}
-            placeholder={kind === 'calendar' ? 'Anniversary, trip, birthday…' : 'Gift ideas, recipes…'}
-            autoFocus
-            required
-          />
-        </label>
+      <label className="field">
+        <span>Title</span>
+        <input
+          value={title}
+          onChange={(event) => setTitle(event.target.value)}
+          placeholder={kind === 'calendar' ? 'Anniversary, trip, birthday…' : 'Gift ideas, recipes…'}
+          autoFocus
+          required
+        />
+      </label>
 
-        <label className="field">
-          <span>Description</span>
-          <textarea
-            value={description}
-            onChange={(event) => setDescription(event.target.value)}
-            rows={3}
-            placeholder={
-              kind === 'calendar'
-                ? 'Optional context for this event'
-                : 'Optional context for anyone looking at this idea'
-            }
-          />
-        </label>
+      <label className="field">
+        <span>Description</span>
+        <textarea
+          value={description}
+          onChange={(event) => setDescription(event.target.value)}
+          rows={3}
+          placeholder={
+            kind === 'calendar'
+              ? 'Optional context for this event'
+              : 'Optional context for anyone looking at this idea'
+          }
+        />
+      </label>
 
-        {kind === 'calendar' ? (
-          <>
+      {kind === 'calendar' ? (
+        <>
+          <div className="field-row">
+            <label className="field">
+              <span>Starts</span>
+              <input
+                type="date"
+                value={startDate}
+                onChange={(event) => {
+                  const next = event.target.value
+                  setStartDate(next)
+                  if (endDate < next) setEndDate(next)
+                }}
+                required
+              />
+            </label>
+            <label className="field">
+              <span>Ends</span>
+              <input type="date" value={endDate} min={startDate} onChange={(event) => setEndDate(event.target.value)} required />
+            </label>
+          </div>
+
+          <label className="check">
+            <input type="checkbox" checked={allDay} onChange={(event) => setAllDay(event.target.checked)} />
+            All day
+          </label>
+
+          {!allDay ? (
             <div className="field-row">
               <label className="field">
-                <span>Starts</span>
-                <input
-                  type="date"
-                  value={startDate}
-                  onChange={(event) => {
-                    const next = event.target.value
-                    setStartDate(next)
-                    if (endDate < next) setEndDate(next)
-                  }}
-                  required
-                />
+                <span>Start time</span>
+                <input type="time" value={startTime} onChange={(event) => setStartTime(event.target.value)} required />
               </label>
               <label className="field">
-                <span>Ends</span>
-                <input type="date" value={endDate} min={startDate} onChange={(event) => setEndDate(event.target.value)} required />
+                <span>End time</span>
+                <input type="time" value={endTime} onChange={(event) => setEndTime(event.target.value)} required />
               </label>
             </div>
+          ) : null}
 
-            <label className="check">
-              <input type="checkbox" checked={allDay} onChange={(event) => setAllDay(event.target.checked)} />
-              All day
-            </label>
+          <label className="field">
+            <span>Repeats</span>
+            <select value={recurrence} onChange={(event) => setRecurrence(event.target.value as Recurrence)}>
+              <option value="none">Does not repeat</option>
+              <option value="yearly">Every year</option>
+              <option value="monthly">Every month</option>
+            </select>
+          </label>
 
-            {!allDay ? (
-              <div className="field-row">
-                <label className="field">
-                  <span>Start time</span>
-                  <input type="time" value={startTime} onChange={(event) => setStartTime(event.target.value)} required />
-                </label>
-                <label className="field">
-                  <span>End time</span>
-                  <input type="time" value={endTime} onChange={(event) => setEndTime(event.target.value)} required />
-                </label>
-              </div>
-            ) : null}
+          <div className="field">
+            <span>Location</span>
+            <LocationPicker value={location} onChange={setLocation} />
+          </div>
+        </>
+      ) : null}
 
-            <label className="field">
-              <span>Repeats</span>
-              <select value={recurrence} onChange={(event) => setRecurrence(event.target.value as Recurrence)}>
-                <option value="none">Does not repeat</option>
-                <option value="yearly">Every year</option>
-                <option value="monthly">Every month</option>
-              </select>
-            </label>
+      <footer className="modal__footer">
+        <button type="button" className="ghost" onClick={close}>
+          Cancel
+        </button>
+        <button type="submit" className="primary">
+          {initial ? 'Save changes' : kind === 'calendar' ? 'Create event' : 'Create idea'}
+        </button>
+      </footer>
+    </form>
+  )
+}
 
-            <div className="field">
-              <span>Location</span>
-              <LocationPicker value={location} onChange={setLocation} />
-            </div>
-          </>
-        ) : null}
-
-        <footer className="modal__footer">
-          <button type="button" className="ghost" onClick={onClose}>
-            Cancel
-          </button>
-          <button type="submit" className="primary">
-            {initial ? 'Save changes' : kind === 'calendar' ? 'Create event' : 'Create idea'}
-          </button>
-        </footer>
-      </form>
+export function CollectionForm(props: CollectionFormProps) {
+  return (
+    <ModalBackdrop onClose={props.onClose}>
+      <CollectionFormBody {...props} />
     </ModalBackdrop>
   )
 }

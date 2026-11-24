@@ -10,7 +10,8 @@ import {
   type ListEntry,
   type ListExtraMode,
 } from '../list'
-import { ModalBackdrop } from './ModalBackdrop'
+import { useModalClose } from '../lib/historyBarrier'
+import { ModalBackdrop, ModalDismissButton } from './ModalBackdrop'
 
 interface ListEditorProps {
   title: string
@@ -38,7 +39,8 @@ export function LinkifiedText({ text }: { text: string }) {
   return <>{nodes}</>
 }
 
-export function ListEditor({ title, initial, onClose, onSave }: ListEditorProps) {
+function ListEditorBody({ title, initial, onClose, onSave }: ListEditorProps) {
+  const close = useModalClose(onClose)
   const headingId = useId()
   const [mode, setMode] = useState<ListExtraMode>(initial?.mode ?? 'off')
   const [entries, setEntries] = useState<ListEntry[]>(() =>
@@ -47,11 +49,11 @@ export function ListEditor({ title, initial, onClose, onSave }: ListEditorProps)
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose()
+      if (event.key === 'Escape') close()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
+  }, [close])
 
   const updateEntry = (id: string, patch: Partial<ListEntry>) => {
     setEntries((prev) => prev.map((entry) => (entry.id === id ? { ...entry, ...patch } : entry)))
@@ -75,25 +77,24 @@ export function ListEditor({ title, initial, onClose, onSave }: ListEditorProps)
   const total = sumMoney({ mode, entries })
 
   return (
-    <ModalBackdrop onClose={onClose}>
-      <div
-        className="modal list-editor"
-        role="dialog"
-        aria-labelledby={headingId}
-        aria-modal="true"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <header className="modal__header">
-          <h2 id={headingId}>{title}</h2>
-          <div className="list-editor__header-actions">
-            <button type="button" className="ghost" onClick={onClose}>
-              Close
-            </button>
-            <button type="button" className="primary" onClick={save}>
-              Save
-            </button>
-          </div>
-        </header>
+    <div
+      className="modal list-editor"
+      role="dialog"
+      aria-labelledby={headingId}
+      aria-modal="true"
+      onClick={(event) => event.stopPropagation()}
+    >
+      <header className="modal__header">
+        <h2 id={headingId}>{title}</h2>
+        <div className="list-editor__header-actions">
+          <ModalDismissButton className="ghost" onClose={onClose}>
+            Close
+          </ModalDismissButton>
+          <button type="button" className="primary" onClick={save}>
+            Save
+          </button>
+        </div>
+      </header>
 
         <div className="list-mode" role="group" aria-label="Extra column">
           {(
@@ -211,7 +212,14 @@ export function ListEditor({ title, initial, onClose, onSave }: ListEditorProps)
             </p>
           ) : null}
         </div>
-      </div>
+    </div>
+  )
+}
+
+export function ListEditor(props: ListEditorProps) {
+  return (
+    <ModalBackdrop onClose={props.onClose}>
+      <ListEditorBody {...props} />
     </ModalBackdrop>
   )
 }

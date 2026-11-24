@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { BrandMark, LocationPin } from './components/BrandMark'
 import { CalendarView } from './components/CalendarView'
 import { CollectionDetail } from './components/CollectionDetail'
@@ -12,6 +12,7 @@ import { PencilHint } from './components/PencilHint'
 import { SyncStatusBanner } from './components/SyncStatusBanner'
 import { DemoModeBanner } from './components/DemoModeBanner'
 import { WelcomeView } from './components/WelcomeView'
+import { getHistoryBarrierCount } from './lib/historyBarrier'
 import {
   boardPath,
   COLLECTION_HISTORY_KEY,
@@ -177,8 +178,30 @@ export default function App() {
   // popstate must read latest boards / activeBoardId — the ready effect's closure goes stale.
   const appRef = useRef(app)
   const selectedIdRef = useRef(selectedId)
+  const formKindRef = useRef(formKind)
+  const inviteOpenRef = useRef(inviteOpen)
+  const deviceLinkOpenRef = useRef(deviceLinkOpen)
   appRef.current = app
   selectedIdRef.current = selectedId
+  formKindRef.current = formKind
+  inviteOpenRef.current = inviteOpen
+  deviceLinkOpenRef.current = deviceLinkOpen
+  /** Last committed app href (no modal/lightbox barrier) — Back overlays compare against this. */
+  const routeHrefRef = useRef(
+    typeof window !== 'undefined'
+      ? `${window.location.pathname}${window.location.search}`
+      : '/',
+  )
+  const rememberHref = () => {
+    routeHrefRef.current = `${window.location.pathname}${window.location.search}`
+  }
+
+  const dismissAppOverlays = () => {
+    setFormKind(null)
+    setEditingId(null)
+    setInviteOpen(false)
+    setDeviceLinkOpen(false)
+  }
 
   useEffect(() => {
     if (hasPartner) completeHint('invite')
@@ -188,22 +211,45 @@ export default function App() {
     if (tab === 'ideas') completeHint('tabs')
   }, [completeHint, tab])
 
-  const applyRoute = (route: AppRoute, mode: 'push' | 'replace' = 'replace') => {
+  // Edit modal whose collection is no longer open — unmount (Cancel); never float over board.
+  useEffect(() => {
+    if (!formKind || !editingId) return
+    if (!selected || selected.id !== editingId) {
+      setFormKind(null)
+      setEditingId(null)
+    }
+  }, [formKind, editingId, selected])
+
+  const applyRoute = (
+    route: AppRoute,
+    mode: 'push' | 'replace' = 'replace',
+    source: 'boot' | 'pop' = 'boot',
+  ) => {
     const current = appRef.current
     const write = mode === 'push' ? pushPath : replacePath
     if (route.name === 'home') {
-      // Thin history / lightbox overshoot can pop to `/` while an idea/event is open.
-      // Restore that collection URL instead of dumping to the boards list / “not on this device”.
-      if (current.activeBoardId && selectedIdRef.current) {
-        replacePath(boardPath(current.activeBoardId, selectedIdRef.current))
+      if (source === 'pop') {
+        // Hardware/browser Back to the boards list — honor it.
+        current.closeBoard()
+        setSelectedId(null)
+        dismissAppOverlays()
+        rememberHref()
         return
       }
-      // Welcome invite/recovery sets activeBoardId before the URL becomes /board/<id>.
-      // Re-applying `/` must not closeBoard() or the user lands on HomeView.
-      if (current.activeBoardId) return
+      // Boot / welcome flip: keep an already-open board (redeem race) and sync the bar.
+      if (current.activeBoardId) {
+        replacePath(
+          selectedIdRef.current
+            ? boardPath(current.activeBoardId, selectedIdRef.current)
+            : boardPath(current.activeBoardId),
+        )
+        rememberHref()
+        return
+      }
       current.closeBoard()
       setSelectedId(null)
       write(homePath())
+      rememberHref()
       return
     }
     if (route.name === 'join') {
@@ -212,6 +258,7 @@ export default function App() {
       if (current.activeBoardId) return
       current.closeBoard()
       write(`/join/${encodeURIComponent(route.code)}`)
+      rememberHref()
       if (current.needsWelcome) {
         // Unrecognized device: feed the code into welcome pre-check (no auto join / no account).
         setWelcomeJoinCode(route.code)
@@ -223,6 +270,7 @@ export default function App() {
     }
     if (current.needsWelcome) {
       write(homePath())
+      rememberHref()
       return
     }
     const known = current.boards.some((entry) => entry.id === route.boardId)
@@ -230,26 +278,67 @@ export default function App() {
       setRouteNotice('That board is not on this device. Join with a code, or ask your partner for recovery.')
       current.closeBoard()
       write(homePath())
+      rememberHref()
       return
     }
     current.openBoard(route.boardId)
     if (route.collectionId) setSelectedId(route.collectionId)
     else setSelectedId(null)
+    if (source === 'pop') dismissAppOverlays()
     write(boardPath(route.boardId, route.collectionId))
+    rememberHref()
   }
 
   useEffect(() => {
     if (!app.ready) return
-    applyRoute(parsePath(window.location.pathname), 'replace')
-    // Lightbox pushes a same-URL entry; Back from it lands on the idea/event path and
-    // this handler re-applies that route (no navigation past the collection).
-    const onPop = () => applyRoute(parsePath(window.location.pathname), 'replace')
+    applyRoute(parsePath(window.location.pathname), 'replace', 'boot')
+    /**
+     * Bubble-phase handler (barriers use capture and Cancel first).
+     * While any modal barrier is mounted, never navigate the page underneath —
+     * snap back to the pre-overlay href and ensure App overlays are dismissed.
+     */
+    const onPop = () => {
+      try {
+        const href = `${window.location.pathname}${window.location.search}`
+        const stay = routeHrefRef.current
+        const overlayOpen =
+          getHistoryBarrierCount() > 0 ||
+          Boolean(formKindRef.current) ||
+          inviteOpenRef.current ||
+          deviceLinkOpenRef.current
+
+        if (overlayOpen) {
+          if (href !== stay) {
+            window.history.pushState(window.history.state, '', stay)
+          }
+          dismissAppOverlays()
+          return
+        }
+
+        // Same-URL pop with no App overlay — lightbox barrier owns this.
+        if (href === stay) return
+
+        applyRoute(parsePath(window.location.pathname), 'replace', 'pop')
+      } catch (error) {
+        console.error('popstate route apply failed', error)
+      }
+    }
     window.addEventListener('popstate', onPop)
     return () => window.removeEventListener('popstate', onPop)
     // Re-run when welcome ↔ signed-in flips so popstate uses a fresh applyRoute.
     // applyRoute reads appRef for boards / activeBoardId (not a stale closure).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [app.ready, app.needsWelcome])
+
+  // Board UI open but address bar still on `/` (missed push / welcome race) — sync
+  // without adding an extra history entry so desktop shows `/board/<id>?qa=1`.
+  useLayoutEffect(() => {
+    if (!app.ready || !board) return
+    const route = parsePath(window.location.pathname)
+    if (route.name !== 'home') return
+    replacePath(selectedId ? boardPath(board.id, selectedId) : boardPath(board.id))
+    rememberHref()
+  }, [app.ready, board, selectedId])
 
   useEffect(() => {
     if (!app.ready || app.needsWelcome || !pendingJoinCode) return
@@ -312,6 +401,7 @@ export default function App() {
     setRouteNotice(null)
     app.openBoard(boardId)
     pushPath(boardPath(boardId))
+    rememberHref()
   }
 
   const openCollection = (collectionId: string) => {
@@ -326,9 +416,19 @@ export default function App() {
       Boolean(current.collectionId)
     ) {
       replacePath(boardPath(board.id, collectionId), marker)
+      rememberHref()
+      return
+    }
+    // Board UI open but bar still on `/` (or wrong board): fix current entry to
+    // the board, then push collection so Back unwinds collection → board → boards.
+    if (current.name !== 'board' || current.boardId !== board.id) {
+      replacePath(boardPath(board.id))
+      pushPath(boardPath(board.id, collectionId), marker)
+      rememberHref()
       return
     }
     pushPath(boardPath(board.id, collectionId), marker)
+    rememberHref()
   }
 
   const leaveCollection = () => {
@@ -348,17 +448,22 @@ export default function App() {
       historyHasCollectionEntry(route.collectionId)
     ) {
       setSelectedId(null)
+      dismissAppOverlays()
       window.history.back()
       return
     }
     setSelectedId(null)
+    dismissAppOverlays()
     replacePath(boardUrl, { [COLLECTION_HISTORY_KEY]: null })
+    rememberHref()
   }
 
   const goHome = () => {
     app.closeBoard()
     setSelectedId(null)
+    dismissAppOverlays()
     pushPath(homePath())
+    rememberHref()
   }
 
   const syncBanner = (

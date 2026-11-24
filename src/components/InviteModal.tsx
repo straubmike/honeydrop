@@ -1,6 +1,6 @@
 import { useEffect, useId, useState } from 'react'
 import { joinUrl, shareOrCopy } from '../lib/routes'
-import { ModalBackdrop } from './ModalBackdrop'
+import { ModalBackdrop, ModalDismissButton } from './ModalBackdrop'
 
 interface InviteModalProps {
   boardTitle: string
@@ -145,9 +145,9 @@ export function InviteModal({
         )}
 
         <div className="modal__actions">
-          <button type="button" className="ghost" onClick={onClose}>
+          <ModalDismissButton className="ghost" onClose={onClose}>
             Close
-          </button>
+          </ModalDismissButton>
         </div>
       </div>
     </ModalBackdrop>
