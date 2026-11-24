@@ -14,6 +14,8 @@ import { DemoModeBanner } from './components/DemoModeBanner'
 import { WelcomeView } from './components/WelcomeView'
 import {
   boardPath,
+  COLLECTION_HISTORY_KEY,
+  historyHasCollectionEntry,
   homePath,
   parsePath,
   pushPath,
@@ -172,6 +174,12 @@ export default function App() {
   })
   const { complete: completeHint } = hints
 
+  // popstate must read latest boards / activeBoardId — the ready effect's closure goes stale.
+  const appRef = useRef(app)
+  const selectedIdRef = useRef(selectedId)
+  appRef.current = app
+  selectedIdRef.current = selectedId
+
   useEffect(() => {
     if (hasPartner) completeHint('invite')
   }, [completeHint, hasPartner])
@@ -181,12 +189,19 @@ export default function App() {
   }, [completeHint, tab])
 
   const applyRoute = (route: AppRoute, mode: 'push' | 'replace' = 'replace') => {
+    const current = appRef.current
     const write = mode === 'push' ? pushPath : replacePath
     if (route.name === 'home') {
+      // Thin history / lightbox overshoot can pop to `/` while an idea/event is open.
+      // Restore that collection URL instead of dumping to the boards list / “not on this device”.
+      if (current.activeBoardId && selectedIdRef.current) {
+        replacePath(boardPath(current.activeBoardId, selectedIdRef.current))
+        return
+      }
       // Welcome invite/recovery sets activeBoardId before the URL becomes /board/<id>.
       // Re-applying `/` must not closeBoard() or the user lands on HomeView.
-      if (app.activeBoardId) return
-      app.closeBoard()
+      if (current.activeBoardId) return
+      current.closeBoard()
       setSelectedId(null)
       write(homePath())
       return
@@ -194,10 +209,10 @@ export default function App() {
     if (route.name === 'join') {
       // After welcome redeem, leftover `/join/<code>` must not close the board or
       // kick off a second joinBoard while the redeem handler updates the URL.
-      if (app.activeBoardId) return
-      app.closeBoard()
+      if (current.activeBoardId) return
+      current.closeBoard()
       write(`/join/${encodeURIComponent(route.code)}`)
-      if (app.needsWelcome) {
+      if (current.needsWelcome) {
         // Unrecognized device: feed the code into welcome pre-check (no auto join / no account).
         setWelcomeJoinCode(route.code)
         setPendingJoinCode(null)
@@ -206,18 +221,18 @@ export default function App() {
       setPendingJoinCode(route.code)
       return
     }
-    if (app.needsWelcome) {
+    if (current.needsWelcome) {
       write(homePath())
       return
     }
-    const known = app.boards.some((entry) => entry.id === route.boardId)
+    const known = current.boards.some((entry) => entry.id === route.boardId)
     if (!known) {
       setRouteNotice('That board is not on this device. Join with a code, or ask your partner for recovery.')
-      app.closeBoard()
+      current.closeBoard()
       write(homePath())
       return
     }
-    app.openBoard(route.boardId)
+    current.openBoard(route.boardId)
     if (route.collectionId) setSelectedId(route.collectionId)
     else setSelectedId(null)
     write(boardPath(route.boardId, route.collectionId))
@@ -232,7 +247,7 @@ export default function App() {
     window.addEventListener('popstate', onPop)
     return () => window.removeEventListener('popstate', onPop)
     // Re-run when welcome ↔ signed-in flips so popstate uses a fresh applyRoute.
-    // applyRoute itself refuses to clobber an already-open board (welcome redeem race).
+    // applyRoute reads appRef for boards / activeBoardId (not a stale closure).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [app.ready, app.needsWelcome])
 
@@ -303,16 +318,17 @@ export default function App() {
     if (!board) return
     setSelectedId(collectionId)
     const current = parsePath(window.location.pathname)
+    const marker = { [COLLECTION_HISTORY_KEY]: collectionId }
     // Already on a collection (e.g. save after edit): replace so Back still returns to board.
     if (
       current.name === 'board' &&
       current.boardId === board.id &&
       Boolean(current.collectionId)
     ) {
-      replacePath(boardPath(board.id, collectionId))
+      replacePath(boardPath(board.id, collectionId), marker)
       return
     }
-    pushPath(boardPath(board.id, collectionId))
+    pushPath(boardPath(board.id, collectionId), marker)
   }
 
   const leaveCollection = () => {
@@ -320,21 +336,23 @@ export default function App() {
       setSelectedId(null)
       return
     }
-    const pathBefore = window.location.pathname
-    const route = parsePath(pathBefore)
-    if (route.name === 'board' && route.collectionId) {
+    const route = parsePath(window.location.pathname)
+    const boardUrl = boardPath(board.id)
+    // Prefer unwinding a pushed collection entry so browser Back stays coherent.
+    // Never bare history.back() without a marker — that overshoots to boards list
+    // when the stack is thin (deep link) or a lightbox orphan shares the same URL.
+    if (
+      route.name === 'board' &&
+      route.collectionId &&
+      route.boardId === board.id &&
+      historyHasCollectionEntry(route.collectionId)
+    ) {
+      setSelectedId(null)
       window.history.back()
-      // Deep link / replaced stack: no board entry to unwind — drop to board URL.
-      requestAnimationFrame(() => {
-        if (window.location.pathname === pathBefore) {
-          setSelectedId(null)
-          replacePath(boardPath(board.id))
-        }
-      })
       return
     }
     setSelectedId(null)
-    replacePath(boardPath(board.id))
+    replacePath(boardUrl, { [COLLECTION_HISTORY_KEY]: null })
   }
 
   const goHome = () => {
