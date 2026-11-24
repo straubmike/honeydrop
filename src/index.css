@@ -974,6 +974,25 @@ img {
   justify-content: center;
 }
 
+.welcome__hint {
+  display: grid;
+  justify-items: center;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+  text-align: center;
+}
+
+.welcome__hint-toggle {
+  font-size: 0.95rem;
+}
+
+.welcome__hint-body {
+  max-width: 22rem;
+  color: var(--muted);
+  font-size: 0.98rem;
+  line-height: 1.55;
+}
+
 .welcome__status {
   text-align: center;
 }

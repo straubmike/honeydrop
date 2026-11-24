@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useId, useState, type FormEvent, type ReactNode } from 'react'
 import {
   joinCodeErrorMessage,
   type JoinCodeKind,
@@ -44,6 +44,8 @@ export function WelcomeView({
   const [nameError, setNameError] = useState('')
   const [actionBusy, setActionBusy] = useState(false)
   const [bootstrappedCode, setBootstrappedCode] = useState<string | null>(null)
+  const [recoveryHintOpen, setRecoveryHintOpen] = useState(false)
+  const recoveryHintId = useId()
 
   const locked = busy || actionBusy
 
@@ -192,7 +194,7 @@ export function WelcomeView({
                 setStep({ name: 'fresh-name' })
               }}
             >
-              Start fresh
+              New User
             </button>
             <button
               type="button"
@@ -202,6 +204,23 @@ export function WelcomeView({
             >
               Have a code
             </button>
+          </div>
+          <div className="welcome__hint">
+            <button
+              type="button"
+              className="text-btn welcome__hint-toggle"
+              aria-expanded={recoveryHintOpen}
+              aria-controls={recoveryHintId}
+              onClick={() => setRecoveryHintOpen((open) => !open)}
+            >
+              Lost your boards?
+            </button>
+            {recoveryHintOpen ? (
+              <p className="welcome__hint-body" id={recoveryHintId}>
+                Ask your partner to generate a recovery code by tapping your name inside your shared
+                board and input it above.
+              </p>
+            ) : null}
           </div>
         </section>
       ) : null}
