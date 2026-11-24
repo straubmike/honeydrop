@@ -428,6 +428,15 @@ export default function App() {
             app.cycleLinkPreview(selected.id, itemId, direction)
           }
           onSetCollectionCover={(cover) => app.setCollectionCover(selected.id, cover)}
+          onConvertToIdea={() => {
+            app.upsertCollection({
+              ...selected,
+              kind: 'idea',
+              schedule: undefined,
+              updatedAt: new Date().toISOString(),
+            })
+            setTab('ideas')
+          }}
           onReact={(itemId, emoji) => app.toggleReaction(selected.id, itemId, emoji)}
           onReply={(itemId, text) => app.addReply(selected.id, itemId, text)}
         />

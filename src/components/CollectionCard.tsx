@@ -30,7 +30,7 @@ export function CollectionCard({ collection, onOpen, onFocusLocation }: Collecti
 
     return (
       <div
-        className="event-card"
+        className={['event-card', preview ? 'event-card--with-preview' : ''].filter(Boolean).join(' ')}
         role="button"
         tabIndex={0}
         onClick={onOpen}
@@ -67,6 +67,9 @@ export function CollectionCard({ collection, onOpen, onFocusLocation }: Collecti
             {itemCount === 0 ? 'Empty event' : `${itemCount} ${itemCount === 1 ? 'item' : 'items'}`}
           </p>
         </div>
+        {preview ? (
+          <CollectionCoverThumb cover={preview} className="event-card__preview" />
+        ) : null}
       </div>
     )
   }
