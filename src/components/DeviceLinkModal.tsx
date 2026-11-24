@@ -1,5 +1,5 @@
 import { useEffect, useId, useState, type FormEvent } from 'react'
-import { ModalBackdrop } from './ModalBackdrop'
+import { ModalBackdrop, ModalDismissButton } from './ModalBackdrop'
 
 interface DeviceLinkModalProps {
   onClose: () => void
@@ -124,18 +124,18 @@ export function DeviceLinkModal({ onClose, onCreateCode, onClaimCode }: DeviceLi
             ) : null}
             {error ? <p className="field-error">{error}</p> : null}
             <div className="modal__actions">
-              <button type="button" className="ghost" onClick={onClose}>
+              <ModalDismissButton className="ghost" onClose={onClose}>
                 Cancel
-              </button>
+              </ModalDismissButton>
             </div>
           </>
         ) : done ? (
           <>
             <p className="lede">Linked. This device now shares the same boards as your other one.</p>
             <div className="modal__actions">
-              <button type="button" className="primary" onClick={onClose}>
+              <ModalDismissButton className="primary" onClose={onClose}>
                 Done
-              </button>
+              </ModalDismissButton>
             </div>
           </>
         ) : (
@@ -159,9 +159,9 @@ export function DeviceLinkModal({ onClose, onCreateCode, onClaimCode }: DeviceLi
             </label>
             {error ? <p className="field-error">{error}</p> : null}
             <div className="modal__actions">
-              <button type="button" className="ghost" onClick={onClose} disabled={busy}>
+              <ModalDismissButton className="ghost" onClose={onClose} disabled={busy}>
                 Cancel
-              </button>
+              </ModalDismissButton>
               <button type="submit" className="primary" disabled={busy}>
                 {busy ? 'Linking…' : 'Link device'}
               </button>

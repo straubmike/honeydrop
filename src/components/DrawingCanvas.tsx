@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { createPortal } from 'react-dom'
+import { useHistoryBarrier } from '../lib/historyBarrier'
 import { useCompactViewport } from '../useCompactViewport'
 import {
   DRAW_ASPECT,
@@ -109,6 +110,7 @@ export function DrawingCanvas({ initial, onClose, onSave }: DrawingCanvasProps) 
   const stageRef = useRef<HTMLDivElement>(null)
   const currentRef = useRef<DrawingStroke | null>(null)
   const compact = useCompactViewport()
+  const requestClose = useHistoryBarrier(onClose)
   const [bgIndex, setBgIndex] = useState(() => {
     if (!initial) return 0
     const index = DRAW_COLORS.indexOf(initial.background as (typeof DRAW_COLORS)[number])
@@ -129,11 +131,11 @@ export function DrawingCanvas({ initial, onClose, onSave }: DrawingCanvasProps) 
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose()
+      if (event.key === 'Escape') requestClose()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
+  }, [requestClose])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -200,7 +202,7 @@ export function DrawingCanvas({ initial, onClose, onSave }: DrawingCanvasProps) 
     <div className={compact ? 'draw-overlay draw-overlay--full' : 'draw-overlay'} role="presentation">
       <div className="draw-phone" role="dialog" aria-label="Drawing">
         <div className="draw-phone__bar">
-          <button type="button" className="draw-icon-btn" onClick={onClose} aria-label="Close drawing">
+          <button type="button" className="draw-icon-btn" onClick={requestClose} aria-label="Close drawing">
             ×
           </button>
           <div className="draw-phone__actions">

@@ -2,7 +2,7 @@ import { useEffect, useId, useState, type FormEvent, type ReactNode } from 'reac
 import type { IdeaBoard } from '../types'
 import { BrandMark } from './BrandMark'
 import { DeviceLinkIcon } from './DeviceLinkModal'
-import { ModalBackdrop } from './ModalBackdrop'
+import { ModalBackdrop, ModalDismissButton } from './ModalBackdrop'
 
 interface HomeViewProps {
   boards: IdeaBoard[]
@@ -289,9 +289,13 @@ export function HomeView({
               />
             </label>
             <div className="modal__actions">
-              <button type="button" className="ghost" onClick={() => setCreating(false)} disabled={busy}>
+              <ModalDismissButton
+                className="ghost"
+                onClose={() => setCreating(false)}
+                disabled={busy}
+              >
                 Cancel
-              </button>
+              </ModalDismissButton>
               <button type="submit" className="primary" disabled={busy}>
                 {busy ? 'Creating…' : 'Create'}
               </button>
@@ -332,14 +336,13 @@ export function HomeView({
             </label>
             {joinError ? <p className="field-error">{joinError}</p> : null}
             <div className="modal__actions">
-              <button
-                type="button"
+              <ModalDismissButton
                 className="ghost"
-                onClick={() => setJoining(false)}
+                onClose={() => setJoining(false)}
                 disabled={joinBusy || busy}
               >
                 Cancel
-              </button>
+              </ModalDismissButton>
               <button type="submit" className="primary" disabled={joinBusy || busy}>
                 {joinBusy || busy ? 'Joining…' : 'Join'}
               </button>
@@ -366,9 +369,9 @@ export function HomeView({
                 : `Are you sure you want to delete “${pendingDelete.title.trim() || 'Ours'}”?`}
             </p>
             <div className="modal__actions">
-              <button type="button" className="ghost" onClick={() => setPendingDelete(null)}>
+              <ModalDismissButton className="ghost" onClose={() => setPendingDelete(null)}>
                 Cancel
-              </button>
+              </ModalDismissButton>
               <button type="button" className="primary primary--danger" onClick={confirmDeleteRequest}>
                 Confirm
               </button>
