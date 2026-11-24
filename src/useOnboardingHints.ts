@@ -1,21 +1,22 @@
-import { useCallback, useEffect, useRef, useState, type FocusEvent, type KeyboardEvent } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 const KEY = 'ideaboard.hints.v1'
 const TOUCH_QUERY = '(hover: none) and (pointer: coarse)'
 
-export type HintStep = 'name' | 'invite' | 'tabs'
+export type HintStep = 'invite' | 'tabs'
 
 type HintProgress = Record<HintStep, boolean>
 
-const FRESH: HintProgress = { name: false, invite: false, tabs: false }
-const FINISHED: HintProgress = { name: true, invite: true, tabs: true }
+const FRESH: HintProgress = { invite: false, tabs: false }
+const FINISHED: HintProgress = { invite: true, tabs: true }
 
 function readStored(): HintProgress | null {
   try {
     const raw = localStorage.getItem(KEY)
     if (!raw) return null
-    const parsed = JSON.parse(raw) as Partial<HintProgress>
-    return { name: !!parsed.name, invite: !!parsed.invite, tabs: !!parsed.tabs }
+    const parsed = JSON.parse(raw) as Partial<HintProgress> & { name?: boolean }
+    // Legacy rows may still have a `name` flag; ignore it and only keep invite/tabs.
+    return { invite: !!parsed.invite, tabs: !!parsed.tabs }
   } catch {
     return null
   }
@@ -51,32 +52,32 @@ export function useTouchDevice(): boolean {
 }
 
 /**
- * First-run hints shown one at a time: set your name, then invite a partner,
- * then flip between Calendar and Ideas. Users who already had boards before
- * hints existed on this device skip them entirely.
+ * First-run hints shown one at a time: invite a partner, then flip between
+ * Calendar and Ideas. Users who already had boards before hints existed on
+ * this device skip them entirely. Init waits for a real userId so welcome /
+ * reclaim / device-link on a fresh browser is not marked fresh early.
  */
 export function useOnboardingHints({
   ready,
+  userId,
   hasBoards,
-  displayName,
 }: {
   ready: boolean
+  userId: string
   hasBoards: boolean
-  displayName: string
 }) {
   const [stored] = useState(readStored)
   const [done, setDone] = useState<HintProgress | null>(stored)
-  const nameFocused = useRef(false)
 
-  // Decide once, with boards loaded, whether this is a returning user.
+  // Decide once boards are loaded for a signed-in user whether this is returning.
   useEffect(() => {
-    if (!ready || stored) return
+    if (!ready || !userId || stored) return
     const initial = hasBoards ? FINISHED : FRESH
     saveProgress(initial)
     setDone((prev) => prev ?? initial)
-    // Intentionally only the first ready snapshot — boards created later must not skip hints.
+    // Intentionally only the first ready+userId snapshot — boards created later must not skip hints.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, stored])
+  }, [ready, userId, stored])
 
   const complete = useCallback((step: HintStep) => {
     setDone((prev) => {
@@ -87,35 +88,13 @@ export function useOnboardingHints({
     })
   }, [])
 
-  const loaded = done !== null
-
-  // Only count the name as set once the user is done typing it.
-  useEffect(() => {
-    if (loaded && !nameFocused.current && isCustomName(displayName)) complete('name')
-  }, [complete, displayName, loaded])
-
-  const nameInputProps = {
-    onFocus: () => {
-      nameFocused.current = true
-    },
-    onBlur: (event: FocusEvent<HTMLInputElement>) => {
-      nameFocused.current = false
-      if (isCustomName(event.currentTarget.value)) complete('name')
-    },
-    onKeyDown: (event: KeyboardEvent<HTMLInputElement>) => {
-      if (event.key === 'Enter') event.currentTarget.blur()
-    },
-  }
-
   const current: HintStep | null = !done
     ? null
-    : !done.name
-      ? 'name'
-      : !done.invite
-        ? 'invite'
-        : !done.tabs
-          ? 'tabs'
-          : null
+    : !done.invite
+      ? 'invite'
+      : !done.tabs
+        ? 'tabs'
+        : null
 
-  return { current, complete, nameInputProps }
+  return { current, complete }
 }
