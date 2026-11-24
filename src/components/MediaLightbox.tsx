@@ -106,7 +106,12 @@ export function MediaLightbox({
   const canStep = count > 1
   const slideKey = current.kind === 'url' ? current.url : current.attachment.id
   const onCloseRef = useRef(onClose)
+  /** True after we consume the lightbox history entry (Back or guarded × / Escape). */
   const closedByPopRef = useRef(false)
+  /** True once close was requested — blocks a second history.back(). */
+  const closingRef = useRef(false)
+  /** True when this mount pushed (or adopted) a lightbox history entry. */
+  const ownsEntryRef = useRef(false)
 
   useEffect(() => {
     onCloseRef.current = onClose
@@ -116,6 +121,9 @@ export function MediaLightbox({
   // (collection /board/<id>/c/<collectionId> routing stays put).
   useEffect(() => {
     closedByPopRef.current = false
+    closingRef.current = false
+    ownsEntryRef.current = false
+
     if (!isLightboxHistoryState(readHistoryState())) {
       const prev = readHistoryState()
       window.history.pushState(
@@ -123,16 +131,23 @@ export function MediaLightbox({
         '',
         `${window.location.pathname}${window.location.search}${window.location.hash}`,
       )
+      ownsEntryRef.current = true
+    } else {
+      ownsEntryRef.current = true
     }
 
     const onPop = () => {
       closedByPopRef.current = true
+      closingRef.current = true
+      ownsEntryRef.current = false
       onCloseRef.current()
     }
     window.addEventListener('popstate', onPop)
     return () => {
       window.removeEventListener('popstate', onPop)
-      if (!closedByPopRef.current && isLightboxHistoryState(readHistoryState())) {
+      // Unmount without a pop (e.g. navigating away): drop the flag on this entry
+      // without history.back() so we never skip past the idea/event.
+      if (!closedByPopRef.current && ownsEntryRef.current && isLightboxHistoryState(readHistoryState())) {
         const prev = readHistoryState() ?? {}
         const next = { ...prev }
         delete next[LIGHTBOX_STATE_KEY]
@@ -141,15 +156,20 @@ export function MediaLightbox({
           '',
           `${window.location.pathname}${window.location.search}${window.location.hash}`,
         )
+        ownsEntryRef.current = false
       }
     }
   }, [])
 
   const requestClose = () => {
-    if (isLightboxHistoryState(readHistoryState())) {
+    if (closingRef.current) return
+    closingRef.current = true
+    // Only pop when our lightbox entry is still on the stack — never double-back.
+    if (ownsEntryRef.current && isLightboxHistoryState(readHistoryState())) {
       window.history.back()
       return
     }
+    ownsEntryRef.current = false
     onClose()
   }
 
@@ -161,14 +181,15 @@ export function MediaLightbox({
     }
   }, [])
 
+  const requestCloseRef = useRef(requestClose)
+  useEffect(() => {
+    requestCloseRef.current = requestClose
+  })
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
-        if (isLightboxHistoryState(readHistoryState())) {
-          window.history.back()
-          return
-        }
-        onCloseRef.current()
+        requestCloseRef.current()
         return
       }
       if (!canStep) return
