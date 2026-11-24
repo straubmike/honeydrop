@@ -41,21 +41,66 @@ export function boardFromRows(board: BoardRow, members: MemberRow[]): IdeaBoard 
   }
 }
 
-export async function ensureAnonymousSession(): Promise<{ userId: string }> {
+/** Local session only — does not create an account or hit the network for user verification. */
+export async function getExistingSessionUserId(): Promise<string | null> {
   const supabase = getSupabase()
-  const { data: existing, error: existingError } = await supabase.auth.getSession()
-  if (existingError) throw existingError
-  if (existing.session?.user?.id) {
-    return { userId: existing.session.user.id }
-  }
+  const { data, error } = await supabase.auth.getSession()
+  if (error) throw error
+  return data.session?.user?.id ?? null
+}
 
-  const { data, error } = await supabase.auth.signInAnonymously()
+/**
+ * Confirms the local session still maps to a live auth user (online).
+ * Returns null when the session is stale/deleted.
+ */
+export async function verifySessionUser(): Promise<string | null> {
+  const supabase = getSupabase()
+  const { data, error } = await supabase.auth.getUser()
+  if (error || !data.user?.id) return null
+  return data.user.id
+}
+
+export async function signOutLocal(): Promise<void> {
+  const supabase = getSupabase()
+  await supabase.auth.signOut({ scope: 'local' })
+}
+
+export type CreateAnonymousSessionOptions = {
+  /** When false, skip account_signups (device-link claimer is deleted after claim). Default true. */
+  recordSignup?: boolean
+  /** Optional display name written into auth user metadata (profile trigger may pick it up). */
+  displayName?: string
+}
+
+/** Creates a brand-new anonymous account. Call only after welcome / intentional signup. */
+export async function createAnonymousSession(
+  options: CreateAnonymousSessionOptions = {},
+): Promise<{ userId: string }> {
+  const supabase = getSupabase()
+  const displayName = options.displayName?.trim()
+  const { data, error } = await supabase.auth.signInAnonymously(
+    displayName && displayName.toLowerCase() !== 'you'
+      ? { options: { data: { display_name: displayName } } }
+      : undefined,
+  )
   if (error) throw error
   if (!data.user?.id) throw new Error('Anonymous sign-in failed')
-  // Best-effort telemetry for brand-new anonymous accounts only (not restored sessions).
-  // Must never block or fail sign-in.
-  void recordAccountSignup(data.user.id)
+  if (options.recordSignup !== false) {
+    // Best-effort telemetry for brand-new anonymous accounts only.
+    // Must never block or fail sign-in.
+    void recordAccountSignup(data.user.id)
+  }
   return { userId: data.user.id }
+}
+
+/**
+ * @deprecated Prefer getExistingSessionUserId + createAnonymousSession.
+ * Restores an existing session, or creates one (with signup telemetry) if missing.
+ */
+export async function ensureAnonymousSession(): Promise<{ userId: string }> {
+  const existing = await getExistingSessionUserId()
+  if (existing) return { userId: existing }
+  return createAnonymousSession()
 }
 
 export async function loadProfile(userId: string): Promise<{ displayName: string }> {

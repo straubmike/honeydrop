@@ -1,18 +1,22 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
+  createAnonymousSession,
   createRemoteBoard,
   deleteRemoteBoard,
-  ensureAnonymousSession,
   fetchBoard,
   fetchMyBoards,
+  getExistingSessionUserId,
   joinRemoteBoard,
   loadProfile,
   persistBoard,
   persistMyMembership,
+  signOutLocal,
   subscribeToBoards,
   updateProfileName,
+  verifySessionUser,
 } from './api/boards'
 import { claimDeviceLinkCode, createDeviceLinkCode } from './api/deviceLink'
+import { lookupJoinCode } from './api/joinCode'
 import { deleteBoardMediaFolder, uploadBoardMedia } from './api/media'
 import { claimSeatRecoveryCode, createSeatRecoveryCode } from './api/seatRecovery'
 import { clearItemMedia, isMediaItem, itemAttachments, itemMediaAttachments, clearCoverIfStale } from './attachments'
@@ -145,6 +149,7 @@ export function useApp() {
   const [state, setState] = useState<AppState>(emptyState)
   const [activeBoardId, setActiveBoardId] = useState<string | null>(null)
   const [ready, setReady] = useState(false)
+  const [needsWelcome, setNeedsWelcome] = useState(false)
   const [bootError, setBootError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [syncStatus, setSyncStatus] = useState<SyncStatus>(() =>
@@ -361,6 +366,7 @@ export function useApp() {
         if (cancelled) return
         skipPersistRef.current = true
         setState(local)
+        setNeedsWelcome(false)
         setBootError(null)
         setSyncStatus('offline')
         setSyncMessage(null)
@@ -371,8 +377,31 @@ export function useApp() {
         return
       }
       try {
-        const { userId } = await ensureAnonymousSession()
+        let userId = await getExistingSessionUserId()
         if (cancelled) return
+
+        if (userId && isBrowserOnline()) {
+          const verified = await verifySessionUser()
+          if (cancelled) return
+          if (!verified) {
+            await signOutLocal()
+            userId = null
+          } else {
+            userId = verified
+          }
+        }
+
+        if (!userId) {
+          // No session → welcome. Zero DB writes / anon signups until the user acts.
+          skipPersistRef.current = true
+          setState(emptyState())
+          setNeedsWelcome(true)
+          setBootError(null)
+          setSyncStatus(isBrowserOnline() ? 'online' : 'offline')
+          setSyncMessage(null)
+          return
+        }
+
         const profile = await loadProfile(userId)
         const boards = await fetchMyBoards()
         if (cancelled) return
@@ -389,6 +418,7 @@ export function useApp() {
         }
         skipPersistRef.current = true
         setState(nextState)
+        setNeedsWelcome(false)
         setBootError(null)
         setSyncStatus('online')
         setSyncMessage(null)
@@ -397,14 +427,28 @@ export function useApp() {
         if (cancelled) return
         const cached = await loadCachedApp()
         if (cached?.userId) {
+          // Offline / transient failure with a prior snapshot — keep boards usable.
           skipPersistRef.current = true
           setState(cached)
+          setNeedsWelcome(false)
           setBootError(null)
           setSyncStatus('offline')
           setSyncMessage('Offline — showing last saved boards')
         } else {
-          const message = error instanceof Error ? error.message : 'Could not connect to Honey Drop.'
-          setBootError(message)
+          // No usable session/cache: prefer welcome over a hard error when possible.
+          const hadSession = Boolean(await getExistingSessionUserId().catch(() => null))
+          if (!hadSession && isBrowserOnline()) {
+            skipPersistRef.current = true
+            setState(emptyState())
+            setNeedsWelcome(true)
+            setBootError(null)
+            setSyncStatus('online')
+            setSyncMessage(null)
+          } else {
+            const message = error instanceof Error ? error.message : 'Could not connect to Honey Drop.'
+            setBootError(message)
+            setNeedsWelcome(false)
+          }
         }
       } finally {
         if (!cancelled) setReady(true)
@@ -1272,27 +1316,158 @@ export function useApp() {
 
   const createSeatRecovery = useCallback(async (boardId: string) => createSeatRecoveryCode(boardId), [])
 
-  const claimDeviceLink = useCallback(async (code: string) => {
-    const result = await claimDeviceLinkCode(code)
-    if (!result.ok) return result
-    const profile = await loadProfile(result.userId)
-    const boards = await fetchMyBoards()
-    baselineCollectionsRef.current = new Map(
-      boards.map((board) => [board.id, board.collections.map((collection) => collection)]),
-    )
-    deletedCollectionsRef.current = new Map()
-    skipPersistRef.current = true
-    setState({
-      userId: result.userId,
-      displayName: profile.displayName,
-      boards,
-    })
-    setActiveBoardId(null)
-    return { ok: true as const }
-  }, [])
+  const applySignedInState = useCallback(
+    async (userId: string, options?: { openBoardId?: string | null }) => {
+      const profile = await loadProfile(userId)
+      const boards = await fetchMyBoards()
+      const nextBoards = import.meta.env.DEV ? withDevSampleLocations(boards, userId) : boards
+      baselineCollectionsRef.current = new Map(
+        nextBoards.map((board) => [board.id, board.collections.map((collection) => collection)]),
+      )
+      deletedCollectionsRef.current = new Map()
+      const nextState: AppState = {
+        userId,
+        displayName: profile.displayName,
+        boards: nextBoards,
+      }
+      skipPersistRef.current = true
+      setState(nextState)
+      setNeedsWelcome(false)
+      setBootError(null)
+      setSyncStatus('online')
+      setSyncMessage(null)
+      setActiveBoardId(options?.openBoardId ?? null)
+      await cacheAppSnapshot(nextState)
+      return nextState
+    },
+    [],
+  )
+
+  const claimDeviceLink = useCallback(
+    async (code: string) => {
+      const result = await claimDeviceLinkCode(code)
+      if (!result.ok) return result
+      await applySignedInState(result.userId, { openBoardId: null })
+      return { ok: true as const }
+    },
+    [applySignedInState],
+  )
+
+  const welcomeValidateCode = useCallback(async (code: string) => lookupJoinCode(code), [])
+
+  const welcomeStartFresh = useCallback(
+    async (displayName: string): Promise<{ ok: true } | { ok: false; reason: string }> => {
+      const trimmed = displayName.trim()
+      if (!trimmed || trimmed.toLowerCase() === 'you') {
+        return { ok: false, reason: 'Enter your name to continue.' }
+      }
+      setBusy(true)
+      try {
+        const { userId } = await createAnonymousSession({ displayName: trimmed })
+        await updateProfileName(userId, trimmed)
+        await applySignedInState(userId, { openBoardId: null })
+        return { ok: true }
+      } catch (error) {
+        return {
+          ok: false,
+          reason: error instanceof Error ? error.message : 'Could not start.',
+        }
+      } finally {
+        setBusy(false)
+      }
+    },
+    [applySignedInState],
+  )
+
+  const welcomeRedeemInvite = useCallback(
+    async (
+      code: string,
+      displayName: string,
+    ): Promise<{ ok: true; boardId: string } | { ok: false; reason: string }> => {
+      const trimmed = displayName.trim()
+      if (!trimmed || trimmed.toLowerCase() === 'you') {
+        return { ok: false, reason: 'Enter your name to continue.' }
+      }
+      setBusy(true)
+      try {
+        const { userId } = await createAnonymousSession({ displayName: trimmed })
+        await updateProfileName(userId, trimmed)
+        const joined = await joinRemoteBoard(code, trimmed)
+        if (!joined.ok) {
+          // Leave the new account in place so HomeView can retry join; surface the error.
+          await applySignedInState(userId, { openBoardId: null })
+          return joined
+        }
+        await applySignedInState(userId, { openBoardId: joined.boardId })
+        return { ok: true, boardId: joined.boardId }
+      } catch (error) {
+        return {
+          ok: false,
+          reason: error instanceof Error ? error.message : 'Could not join that board.',
+        }
+      } finally {
+        setBusy(false)
+      }
+    },
+    [applySignedInState],
+  )
+
+  const welcomeRedeemRecovery = useCallback(
+    async (
+      code: string,
+    ): Promise<{ ok: true; boardId: string } | { ok: false; reason: string }> => {
+      setBusy(true)
+      try {
+        const { userId } = await createAnonymousSession()
+        // Blank/'You' tells claim_seat_recovery to preserve the replaced seat's name.
+        const recovered = await claimSeatRecoveryCode(code, 'You')
+        if (!recovered.ok) {
+          await applySignedInState(userId, { openBoardId: null })
+          return recovered
+        }
+        await applySignedInState(userId, { openBoardId: recovered.boardId })
+        return { ok: true, boardId: recovered.boardId }
+      } catch (error) {
+        return {
+          ok: false,
+          reason: error instanceof Error ? error.message : 'Could not reclaim that seat.',
+        }
+      } finally {
+        setBusy(false)
+      }
+    },
+    [applySignedInState],
+  )
+
+  const welcomeRedeemDeviceLink = useCallback(
+    async (code: string): Promise<{ ok: true } | { ok: false; reason: string }> => {
+      setBusy(true)
+      try {
+        // Ephemeral claimer — device-link edge deletes it. Skip account_signups so we
+        // do not leave a row for a user that no longer exists.
+        await createAnonymousSession({ recordSignup: false })
+        const result = await claimDeviceLinkCode(code)
+        if (!result.ok) {
+          await signOutLocal().catch(() => undefined)
+          return result
+        }
+        await applySignedInState(result.userId, { openBoardId: null })
+        return { ok: true }
+      } catch (error) {
+        return {
+          ok: false,
+          reason: error instanceof Error ? error.message : 'Could not link this device.',
+        }
+      } finally {
+        setBusy(false)
+      }
+    },
+    [applySignedInState],
+  )
 
   return {
     ready,
+    needsWelcome,
     bootError,
     busy,
     syncStatus,
@@ -1333,6 +1508,11 @@ export function useApp() {
     createDeviceLink,
     claimDeviceLink,
     createSeatRecovery,
+    welcomeValidateCode,
+    welcomeStartFresh,
+    welcomeRedeemInvite,
+    welcomeRedeemRecovery,
+    welcomeRedeemDeviceLink,
   }
 }
 

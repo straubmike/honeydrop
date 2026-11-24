@@ -11,6 +11,7 @@ import { InviteModal } from './components/InviteModal'
 import { PencilHint } from './components/PencilHint'
 import { SyncStatusBanner } from './components/SyncStatusBanner'
 import { DemoModeBanner } from './components/DemoModeBanner'
+import { WelcomeView } from './components/WelcomeView'
 import {
   boardPath,
   homePath,
@@ -21,7 +22,7 @@ import {
 } from './lib/routes'
 import type { BoardMember, Collection, CollectionKind, GeoPoint, Tab } from './types'
 import { useApp } from './useBoard'
-import { useOnboardingHints, useTouchDevice } from './useOnboardingHints'
+import { useOnboardingHints } from './useOnboardingHints'
 
 function boardSubtitle(members: BoardMember[]): string {
   const names = members.map((member) => member.name.trim() || 'You')
@@ -106,6 +107,7 @@ export default function App() {
   const [inviteOpen, setInviteOpen] = useState(false)
   const [deviceLinkOpen, setDeviceLinkOpen] = useState(false)
   const [pendingJoinCode, setPendingJoinCode] = useState<string | null>(null)
+  const [welcomeJoinCode, setWelcomeJoinCode] = useState<string | null>(null)
   const [prefillJoinCode, setPrefillJoinCode] = useState<string | null>(null)
   const [routeNotice, setRouteNotice] = useState<string | null>(null)
   const joinHandledRef = useRef<string | null>(null)
@@ -128,11 +130,9 @@ export default function App() {
   const me = board?.members.find((member) => member.userId === app.userId)
   const hints = useOnboardingHints({
     ready: app.ready,
+    userId: app.userId,
     hasBoards: app.boards.length > 0,
-    displayName: app.displayName,
   })
-  const touch = useTouchDevice()
-  const nameHint = hints.current === 'name' ? `${touch ? 'tap' : 'click'} to add your name!` : null
   const { complete: completeHint } = hints
 
   useEffect(() => {
@@ -152,9 +152,19 @@ export default function App() {
       return
     }
     if (route.name === 'join') {
-      setPendingJoinCode(route.code)
       app.closeBoard()
       write(`/join/${encodeURIComponent(route.code)}`)
+      if (app.needsWelcome) {
+        // Unrecognized device: feed the code into welcome pre-check (no auto join / no account).
+        setWelcomeJoinCode(route.code)
+        setPendingJoinCode(null)
+        return
+      }
+      setPendingJoinCode(route.code)
+      return
+    }
+    if (app.needsWelcome) {
+      write(homePath())
       return
     }
     const known = app.boards.some((entry) => entry.id === route.boardId)
@@ -178,10 +188,10 @@ export default function App() {
     return () => window.removeEventListener('popstate', onPop)
     // Intentionally once when ready — later navigation uses helpers below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [app.ready])
+  }, [app.ready, app.needsWelcome])
 
   useEffect(() => {
-    if (!app.ready || !pendingJoinCode) return
+    if (!app.ready || app.needsWelcome || !pendingJoinCode) return
     if (joinHandledRef.current === pendingJoinCode) return
     joinHandledRef.current = pendingJoinCode
     void app.joinBoard(pendingJoinCode).then((result) => {
@@ -200,8 +210,12 @@ export default function App() {
   }, [app, pendingJoinCode])
 
   useEffect(() => {
+    if (app.needsWelcome) {
+      document.title = 'Honey Drop · Idea Board'
+      return
+    }
     if (!board) {
-      if (!pendingJoinCode) replacePath(homePath())
+      if (!pendingJoinCode && !welcomeJoinCode) replacePath(homePath())
       document.title = 'Honey Drop · Idea Board'
       return
     }
@@ -210,7 +224,7 @@ export default function App() {
       ? boardPath(board.id, selected.id)
       : boardPath(board.id)
     replacePath(path)
-  }, [board, selected, pendingJoinCode])
+  }, [board, selected, pendingJoinCode, welcomeJoinCode, app.needsWelcome])
 
   const focusLocation = (point: GeoPoint) => {
     setSelectedId(null)
@@ -286,6 +300,49 @@ export default function App() {
     )
   }
 
+  if (app.needsWelcome) {
+    return (
+      <WelcomeView
+        busy={app.busy}
+        initialCode={welcomeJoinCode}
+        syncBanner={syncBanner}
+        onValidateCode={app.welcomeValidateCode}
+        onStartFresh={async (displayName) => {
+          const result = await app.welcomeStartFresh(displayName)
+          if (result.ok) {
+            setWelcomeJoinCode(null)
+            replacePath(homePath())
+          }
+          return result
+        }}
+        onRedeemInvite={async (code, displayName) => {
+          const result = await app.welcomeRedeemInvite(code, displayName)
+          if (result.ok) {
+            setWelcomeJoinCode(null)
+            replacePath(boardPath(result.boardId))
+          }
+          return result
+        }}
+        onRedeemRecovery={async (code) => {
+          const result = await app.welcomeRedeemRecovery(code)
+          if (result.ok) {
+            setWelcomeJoinCode(null)
+            replacePath(boardPath(result.boardId))
+          }
+          return result
+        }}
+        onRedeemDeviceLink={async (code) => {
+          const result = await app.welcomeRedeemDeviceLink(code)
+          if (result.ok) {
+            setWelcomeJoinCode(null)
+            replacePath(homePath())
+          }
+          return result
+        }}
+      />
+    )
+  }
+
   const deviceLinkModal = deviceLinkOpen ? (
     <DeviceLinkModal
       onClose={() => setDeviceLinkOpen(false)}
@@ -315,8 +372,6 @@ export default function App() {
           onDismissNotice={() => setRouteNotice(null)}
           syncBanner={syncBanner}
           installPrompt={<InstallPrompt />}
-          nameHint={nameHint}
-          nameInputProps={hints.nameInputProps}
         />
         {deviceLinkModal}
       </>
@@ -419,16 +474,13 @@ export default function App() {
               {me?.location ? (
                 <LocationPin label={me.name || 'You'} onClick={() => focusLocation(me.location!)} />
               ) : null}
-              <PencilHint active={Boolean(nameHint)} text={nameHint ?? ''}>
-                <input
-                  {...hints.nameInputProps}
-                  value={app.displayName}
-                  onChange={(event) => app.setDisplayName(event.target.value)}
-                  maxLength={32}
-                  placeholder="You"
-                  aria-label="Your name"
-                />
-              </PencilHint>
+              <input
+                value={app.displayName}
+                onChange={(event) => app.setDisplayName(event.target.value)}
+                maxLength={32}
+                placeholder="You"
+                aria-label="Your name"
+              />
             </div>
           </div>
           <div className="who">
