@@ -146,12 +146,18 @@ export default function App() {
   const applyRoute = (route: AppRoute, mode: 'push' | 'replace' = 'replace') => {
     const write = mode === 'push' ? pushPath : replacePath
     if (route.name === 'home') {
+      // Welcome invite/recovery sets activeBoardId before the URL becomes /board/<id>.
+      // Re-applying `/` must not closeBoard() or the user lands on HomeView.
+      if (app.activeBoardId) return
       app.closeBoard()
       setSelectedId(null)
       write(homePath())
       return
     }
     if (route.name === 'join') {
+      // After welcome redeem, leftover `/join/<code>` must not close the board or
+      // kick off a second joinBoard while the redeem handler updates the URL.
+      if (app.activeBoardId) return
       app.closeBoard()
       write(`/join/${encodeURIComponent(route.code)}`)
       if (app.needsWelcome) {
@@ -186,7 +192,8 @@ export default function App() {
     const onPop = () => applyRoute(parsePath(window.location.pathname), 'replace')
     window.addEventListener('popstate', onPop)
     return () => window.removeEventListener('popstate', onPop)
-    // Intentionally once when ready — later navigation uses helpers below.
+    // Re-run when welcome ↔ signed-in flips so popstate uses a fresh applyRoute.
+    // applyRoute itself refuses to clobber an already-open board (welcome redeem race).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [app.ready, app.needsWelcome])
 
@@ -210,6 +217,9 @@ export default function App() {
   }, [app, pendingJoinCode])
 
   useEffect(() => {
+    // Never strip `/join/<code>` (or `?src=` / `?qa=1`) before boot finishes —
+    // the ready-gated route effect has not parsed the deep link yet.
+    if (!app.ready) return
     if (app.needsWelcome) {
       document.title = 'Honey Drop · Idea Board'
       return
@@ -224,7 +234,7 @@ export default function App() {
       ? boardPath(board.id, selected.id)
       : boardPath(board.id)
     replacePath(path)
-  }, [board, selected, pendingJoinCode, welcomeJoinCode, app.needsWelcome])
+  }, [app.ready, board, selected, pendingJoinCode, welcomeJoinCode, app.needsWelcome])
 
   const focusLocation = (point: GeoPoint) => {
     setSelectedId(null)
