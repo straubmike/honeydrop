@@ -48,24 +48,54 @@ export function firstVisual(item: Item): Attachment | undefined {
   return itemMediaAttachments(item).find((part) => part.type === 'image' || part.type === 'video')
 }
 
+/**
+ * Collection list covers are static images only — hide “use as preview” for
+ * videos and GIFs (ideas and events). GIFs are type `image`; distinguish via
+ * mime `image/gif` or `.gif` in the URL/path — never type alone.
+ */
+export function canUseAttachmentAsCover(attachment: Attachment): boolean {
+  if (attachment.type !== 'image') return false
+  if (isGifMime(attachment.mime)) return false
+  if (looksLikeGifUrl(attachment.content)) return false
+  return true
+}
+
+export function canUseUrlAsCover(url: string): boolean {
+  return !looksLikeGifUrl(url)
+}
+
+/**
+ * First static image on an item that may be used as a list-card cover.
+ * Same check as “Use as preview” so animated GIFs never auto-default.
+ */
+export function firstCoverImage(item: Item): Attachment | undefined {
+  return itemMediaAttachments(item).find((part) => canUseAttachmentAsCover(part))
+}
+
+/**
+ * Shared cover for idea + event cards (one code path):
+ * (a) no static image → undefined (standard card, no preview)
+ * (b) no explicit pick → first static image (skips video + GIF)
+ * (c) coverPreview set → that image when still valid
+ */
 export function resolveCollectionCover(collection: Collection): CollectionCover | undefined {
   const cover = collection.coverPreview
   if (cover) {
     const item = collection.items.find((entry) => entry.id === cover.itemId)
     if (item) {
-      if (cover.candidateUrl) {
+      if (cover.candidateUrl && canUseUrlAsCover(cover.candidateUrl)) {
         return { kind: 'url', url: cover.candidateUrl }
       }
       if (cover.attachmentId) {
         const attachment = itemMediaAttachments(item).find((part) => part.id === cover.attachmentId)
-        if (attachment && (attachment.type === 'image' || attachment.type === 'video')) {
+        if (attachment && canUseAttachmentAsCover(attachment)) {
           return { kind: 'attachment', attachment }
         }
       }
     }
   }
 
-  const attachment = collection.items.map(firstVisual).find((part) => part != null)
+  const attachment = collection.items.map(firstCoverImage).find((part) => part != null)
   return attachment ? { kind: 'attachment', attachment } : undefined
 }
 
@@ -78,21 +108,6 @@ export function isCollectionCoverPreview(
   if (preview.candidateUrl) return cover.candidateUrl === preview.candidateUrl
   if (preview.attachmentId) return cover.attachmentId === preview.attachmentId
   return false
-}
-
-/**
- * Collection list covers are static images only — hide “use as preview” for
- * videos and GIFs (ideas and events).
- */
-export function canUseAttachmentAsCover(attachment: Attachment): boolean {
-  if (attachment.type !== 'image') return false
-  if (isGifMime(attachment.mime)) return false
-  if (looksLikeGifUrl(attachment.content)) return false
-  return true
-}
-
-export function canUseUrlAsCover(url: string): boolean {
-  return !looksLikeGifUrl(url)
 }
 
 export function clearCoverIfStale(

@@ -620,7 +620,7 @@ export function CollectionDetail({
             <p className="lede">
               Turn “{collection.title.trim() || 'Untitled'}” into an idea? All drops stay put (media,
               links, notes — everything), including the preview image. The date and schedule are
-              removed.
+              removed; when and where are saved as a text drop if this event had them.
             </p>
             <div className="modal__actions">
               <button type="button" className="ghost" onClick={() => setConfirmConvert(false)}>

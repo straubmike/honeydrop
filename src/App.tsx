@@ -20,9 +20,46 @@ import {
   replacePath,
   type AppRoute,
 } from './lib/routes'
-import type { BoardMember, Collection, CollectionKind, GeoPoint, Tab } from './types'
+import {
+  formatSchedule,
+  nextOccurrenceStart,
+  toISODate,
+  uid,
+} from './dates'
+import type { BoardMember, Collection, CollectionKind, GeoPoint, Item, Tab } from './types'
 import { useApp } from './useBoard'
 import { useOnboardingHints } from './useOnboardingHints'
+
+/** Text drop capturing event when/where before schedule is cleared on convert. */
+function eventWhenWhereItem(
+  collection: Collection,
+  author: string,
+  authorUserId: string,
+): Item | null {
+  const lines: string[] = []
+  if (collection.schedule) {
+    const occurrence = toISODate(nextOccurrenceStart(collection.schedule))
+    lines.push(`When: ${formatSchedule(collection.schedule, occurrence)}`)
+  }
+  const where = collection.location?.label?.trim()
+  if (where) {
+    lines.push(`Where: ${where}`)
+  } else if (collection.location) {
+    lines.push(`Where: ${collection.location.lat.toFixed(5)}, ${collection.location.lng.toFixed(5)}`)
+  }
+  if (!lines.length) return null
+  const now = new Date().toISOString()
+  return {
+    id: uid(),
+    type: 'text',
+    content: lines.join('\n'),
+    author,
+    authorUserId,
+    createdAt: now,
+    reactions: [],
+    replies: [],
+  }
+}
 
 function boardSubtitle(members: BoardMember[]): string {
   const names = members.map((member) => member.name.trim() || 'You')
@@ -189,6 +226,8 @@ export default function App() {
   useEffect(() => {
     if (!app.ready) return
     applyRoute(parsePath(window.location.pathname), 'replace')
+    // Lightbox pushes a same-URL entry; Back from it lands on the idea/event path and
+    // this handler re-applies that route (no navigation past the collection).
     const onPop = () => applyRoute(parsePath(window.location.pathname), 'replace')
     window.addEventListener('popstate', onPop)
     return () => window.removeEventListener('popstate', onPop)
@@ -219,6 +258,8 @@ export default function App() {
   useEffect(() => {
     // Never strip `/join/<code>` (or `?src=` / `?qa=1`) before boot finishes —
     // the ready-gated route effect has not parsed the deep link yet.
+    // Path writes for board ↔ collection are push/back in open/back handlers so
+    // browser Back unwinds lightbox → idea/event → board → boards one step each.
     if (!app.ready) return
     if (app.needsWelcome) {
       document.title = 'Honey Drop · Idea Board'
@@ -230,11 +271,7 @@ export default function App() {
       return
     }
     document.title = `${board.title.trim() || 'Ours'} · Idea Board`
-    const path = selected
-      ? boardPath(board.id, selected.id)
-      : boardPath(board.id)
-    replacePath(path)
-  }, [app.ready, board, selected, pendingJoinCode, welcomeJoinCode, app.needsWelcome])
+  }, [app.ready, board, pendingJoinCode, welcomeJoinCode, app.needsWelcome])
 
   const focusLocation = (point: GeoPoint) => {
     setSelectedId(null)
@@ -260,6 +297,44 @@ export default function App() {
     setRouteNotice(null)
     app.openBoard(boardId)
     pushPath(boardPath(boardId))
+  }
+
+  const openCollection = (collectionId: string) => {
+    if (!board) return
+    setSelectedId(collectionId)
+    const current = parsePath(window.location.pathname)
+    // Already on a collection (e.g. save after edit): replace so Back still returns to board.
+    if (
+      current.name === 'board' &&
+      current.boardId === board.id &&
+      Boolean(current.collectionId)
+    ) {
+      replacePath(boardPath(board.id, collectionId))
+      return
+    }
+    pushPath(boardPath(board.id, collectionId))
+  }
+
+  const leaveCollection = () => {
+    if (!board) {
+      setSelectedId(null)
+      return
+    }
+    const pathBefore = window.location.pathname
+    const route = parsePath(pathBefore)
+    if (route.name === 'board' && route.collectionId) {
+      window.history.back()
+      // Deep link / replaced stack: no board entry to unwind — drop to board URL.
+      requestAnimationFrame(() => {
+        if (window.location.pathname === pathBefore) {
+          setSelectedId(null)
+          replacePath(boardPath(board.id))
+        }
+      })
+      return
+    }
+    setSelectedId(null)
+    replacePath(boardPath(board.id))
   }
 
   const goHome = () => {
@@ -400,15 +475,11 @@ export default function App() {
           collection={selected}
           currentUserId={app.userId}
           nameByUserId={nameByUserId}
-          onBack={() => {
-            setSelectedId(null)
-            pushPath(boardPath(board.id))
-          }}
+          onBack={leaveCollection}
           onEdit={() => openForm(selected.kind, selected)}
           onDelete={() => {
             app.deleteCollection(selected.id)
-            setSelectedId(null)
-            pushPath(boardPath(board.id))
+            leaveCollection()
           }}
           onAddItem={(input, boardWidth) => app.addItem(selected.id, input, boardWidth)}
           onDeleteItem={(itemId) => app.deleteItem(selected.id, itemId)}
@@ -429,10 +500,16 @@ export default function App() {
           }
           onSetCollectionCover={(cover) => app.setCollectionCover(selected.id, cover)}
           onConvertToIdea={() => {
+            const whenWhere = eventWhenWhereItem(
+              selected,
+              app.displayName.trim() || 'You',
+              app.userId,
+            )
             app.upsertCollection({
               ...selected,
               kind: 'idea',
               schedule: undefined,
+              items: whenWhere ? [...selected.items, whenWhere] : selected.items,
               updatedAt: new Date().toISOString(),
             })
             setTab('ideas')
@@ -453,7 +530,7 @@ export default function App() {
               app.upsertCollection(collection)
               setFormKind(null)
               setEditingId(null)
-              setSelectedId(collection.id)
+              openCollection(collection.id)
               setTab(collection.kind === 'calendar' ? 'calendar' : 'ideas')
             }}
           />
@@ -578,7 +655,7 @@ export default function App() {
           selectedDate={selectedDate}
           onCursor={setCursor}
           onSelectDate={setSelectedDate}
-          onOpen={setSelectedId}
+          onOpen={openCollection}
           onCreate={() => openForm('calendar')}
           onSetMyLocation={app.setMemberLocation}
           focusPoint={mapFocus}
@@ -588,7 +665,7 @@ export default function App() {
       ) : (
         <IdeasView
           collections={collections}
-          onOpen={setSelectedId}
+          onOpen={openCollection}
           onCreate={() => openForm('idea')}
           onReorder={(activeId, toIndex) => app.reorderCollections('idea', activeId, toIndex)}
         />
@@ -607,7 +684,7 @@ export default function App() {
             app.upsertCollection(collection)
             setFormKind(null)
             setEditingId(null)
-            setSelectedId(collection.id)
+            openCollection(collection.id)
             setTab(collection.kind === 'calendar' ? 'calendar' : 'ideas')
           }}
         />
