@@ -38,6 +38,8 @@ interface CollectionDetailProps {
   onContent: (itemId: string, content: string) => void
   onCyclePreview: (itemId: string, direction: 'forward' | 'backward') => void | Promise<void>
   onSetCollectionCover: (cover: CollectionCoverPreview) => void
+  /** Turn a calendar event into an idea, keeping every drop + cover. */
+  onConvertToIdea?: () => void
 }
 
 interface FreeformDragState {
@@ -133,6 +135,7 @@ export function CollectionDetail({
   onContent,
   onCyclePreview,
   onSetCollectionCover,
+  onConvertToIdea,
 }: CollectionDetailProps) {
   const compact = useCompactViewport()
   const boardRef = useRef<HTMLDivElement>(null)
@@ -147,6 +150,8 @@ export function CollectionDetail({
   const [drag, setDrag] = useState<FreeformDragState | null>(null)
   const [compactDrag, setCompactDrag] = useState<CompactDragState | null>(null)
   const [drawing, setDrawing] = useState<{ mode: 'new' } | { mode: 'edit'; itemId: string } | null>(null)
+  const [confirmConvert, setConfirmConvert] = useState(false)
+  const convertHeadingId = useId()
   const [listEdit, setListEdit] = useState<{ mode: 'new' } | { mode: 'edit'; itemId: string } | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const deleteHeadingId = useId()
@@ -445,6 +450,7 @@ export function CollectionDetail({
       }}
       collectionCoverPreview={collection.coverPreview}
       onSetCollectionCover={onSetCollectionCover}
+      coverLabel={collection.kind === 'calendar' ? 'event' : 'idea'}
       onEditDrawing={
         item.type === 'drawing' ? () => setDrawing({ mode: 'edit', itemId: item.id }) : undefined
       }
@@ -478,6 +484,11 @@ export function CollectionDetail({
           <button type="button" className="ghost" onClick={onEdit}>
             Edit
           </button>
+          {collection.kind === 'calendar' && onConvertToIdea ? (
+            <button type="button" className="ghost" onClick={() => setConfirmConvert(true)}>
+              Convert to idea
+            </button>
+          ) : null}
           <button type="button" className="ghost ghost--danger" onClick={() => setConfirmDelete(true)}>
             Delete
           </button>
@@ -592,6 +603,42 @@ export function CollectionDetail({
             setListEdit(null)
           }}
         />
+      ) : null}
+
+      {confirmConvert && onConvertToIdea ? (
+        <ModalBackdrop onClose={() => setConfirmConvert(false)}>
+          <div
+            className="modal"
+            role="dialog"
+            aria-labelledby={convertHeadingId}
+            aria-modal="true"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <header className="modal__header">
+              <h2 id={convertHeadingId}>Convert to idea</h2>
+            </header>
+            <p className="lede">
+              Turn “{collection.title.trim() || 'Untitled'}” into an idea? All drops stay put (media,
+              links, notes — everything), including the preview image. The date and schedule are
+              removed.
+            </p>
+            <div className="modal__actions">
+              <button type="button" className="ghost" onClick={() => setConfirmConvert(false)}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="primary"
+                onClick={() => {
+                  setConfirmConvert(false)
+                  onConvertToIdea()
+                }}
+              >
+                Convert
+              </button>
+            </div>
+          </div>
+        </ModalBackdrop>
       ) : null}
 
       {confirmDelete ? (

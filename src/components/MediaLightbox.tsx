@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { fetchLinkImageBlob } from '../linkPreview'
 import type { Attachment } from '../types'
@@ -7,6 +7,20 @@ import { useMediaSrc } from './Media'
 export type LightboxSlide =
   | { kind: 'attachment'; attachment: Attachment }
   | { kind: 'url'; url: string }
+
+const LIGHTBOX_STATE_KEY = 'honeydropLightbox'
+
+type HistoryState = Record<string, unknown> | null
+
+function readHistoryState(): HistoryState {
+  const state = window.history.state
+  if (state && typeof state === 'object') return state as Record<string, unknown>
+  return null
+}
+
+function isLightboxHistoryState(state: HistoryState): boolean {
+  return Boolean(state && state[LIGHTBOX_STATE_KEY])
+}
 
 function useRemoteImageSrc(url: string): string | null | undefined {
   const [src, setSrc] = useState<string | null | undefined>(undefined)
@@ -74,6 +88,8 @@ interface MediaLightboxProps {
   onIndexChange: (index: number) => void
   isCollectionCover?: boolean
   onSetCollectionCover?: () => void
+  /** Label context for the cover button (defaults to generic “preview”). */
+  coverLabel?: 'idea' | 'event' | 'preview'
 }
 
 export function MediaLightbox({
@@ -83,11 +99,59 @@ export function MediaLightbox({
   onIndexChange,
   isCollectionCover = false,
   onSetCollectionCover,
+  coverLabel = 'preview',
 }: MediaLightboxProps) {
   const count = slides.length
   const current = slides[((index % count) + count) % count]
   const canStep = count > 1
   const slideKey = current.kind === 'url' ? current.url : current.attachment.id
+  const onCloseRef = useRef(onClose)
+  const closedByPopRef = useRef(false)
+
+  useEffect(() => {
+    onCloseRef.current = onClose
+  }, [onClose])
+
+  // Push a same-URL history entry so mobile Back closes the slideshow only
+  // (collection /board/<id>/c/<collectionId> routing stays put).
+  useEffect(() => {
+    closedByPopRef.current = false
+    if (!isLightboxHistoryState(readHistoryState())) {
+      const prev = readHistoryState()
+      window.history.pushState(
+        { ...(prev ?? {}), [LIGHTBOX_STATE_KEY]: true },
+        '',
+        `${window.location.pathname}${window.location.search}${window.location.hash}`,
+      )
+    }
+
+    const onPop = () => {
+      closedByPopRef.current = true
+      onCloseRef.current()
+    }
+    window.addEventListener('popstate', onPop)
+    return () => {
+      window.removeEventListener('popstate', onPop)
+      if (!closedByPopRef.current && isLightboxHistoryState(readHistoryState())) {
+        const prev = readHistoryState() ?? {}
+        const next = { ...prev }
+        delete next[LIGHTBOX_STATE_KEY]
+        window.history.replaceState(
+          Object.keys(next).length ? next : null,
+          '',
+          `${window.location.pathname}${window.location.search}${window.location.hash}`,
+        )
+      }
+    }
+  }, [])
+
+  const requestClose = () => {
+    if (isLightboxHistoryState(readHistoryState())) {
+      window.history.back()
+      return
+    }
+    onClose()
+  }
 
   useEffect(() => {
     const previous = document.body.style.overflow
@@ -99,19 +163,36 @@ export function MediaLightbox({
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose()
+      if (event.key === 'Escape') {
+        if (isLightboxHistoryState(readHistoryState())) {
+          window.history.back()
+          return
+        }
+        onCloseRef.current()
+        return
+      }
       if (!canStep) return
       if (event.key === 'ArrowLeft') onIndexChange((index - 1 + count) % count)
       if (event.key === 'ArrowRight') onIndexChange((index + 1) % count)
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [canStep, count, index, onClose, onIndexChange])
+  }, [canStep, count, index, onIndexChange])
+
+  const coverNoun = coverLabel === 'idea' ? 'idea' : coverLabel === 'event' ? 'event' : ''
+  const coverIdleLabel = coverNoun ? `Use as ${coverNoun} preview` : 'Use as preview'
+  const coverActiveLabel = coverNoun ? `${coverNoun[0]!.toUpperCase()}${coverNoun.slice(1)} preview` : 'Preview'
 
   return createPortal(
-    <div className="media-lightbox" role="dialog" aria-modal="true" aria-label="Media viewer" onClick={onClose}>
+    <div
+      className="media-lightbox"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Media viewer"
+      onClick={requestClose}
+    >
       <div className="media-lightbox__panel" onClick={(event) => event.stopPropagation()}>
-        <button type="button" className="media-lightbox__close" aria-label="Close" onClick={onClose}>
+        <button type="button" className="media-lightbox__close" aria-label="Close" onClick={requestClose}>
           ×
         </button>
         {canStep ? (
@@ -153,7 +234,7 @@ export function MediaLightbox({
               .join(' ')}
             onClick={onSetCollectionCover}
           >
-            {isCollectionCover ? 'Idea preview' : 'Use as idea preview'}
+            {isCollectionCover ? coverActiveLabel : coverIdleLabel}
           </button>
         ) : null}
       </div>

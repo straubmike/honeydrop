@@ -97,6 +97,21 @@ export function mediaKindFromMime(mime: string): MediaKind | null {
   return null
 }
 
+/** True for image/gif (animated or not — treat GIFs as non-cover media). */
+export function isGifMime(mime?: string): boolean {
+  const type = (mime ?? '').toLowerCase().split(';')[0]?.trim() ?? ''
+  return type === 'image/gif'
+}
+
+/** Path/URL looks like a .gif asset (querystring-safe). */
+export function looksLikeGifUrl(url: string): boolean {
+  try {
+    return /\.gif$/i.test(new URL(url).pathname)
+  } catch {
+    return /\.gif(\?|#|$)/i.test(url)
+  }
+}
+
 export function clipboardMediaFiles(data: DataTransfer): File[] {
   const seen = new Set<string>()
   const files: File[] = []

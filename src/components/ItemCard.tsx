@@ -1,5 +1,13 @@
 import { useEffect, useMemo, useRef, useState, type ClipboardEvent, type FormEvent, type PointerEvent as ReactPointerEvent } from 'react'
-import { isMediaItem, isCollectionCoverPreview, itemLinkAttachments, itemPreviewMedia, itemUserMedia } from '../attachments'
+import {
+  canUseAttachmentAsCover,
+  canUseUrlAsCover,
+  isMediaItem,
+  isCollectionCoverPreview,
+  itemLinkAttachments,
+  itemPreviewMedia,
+  itemUserMedia,
+} from '../attachments'
 import { relativeTime } from '../dates'
 import {
   classifyMedia,
@@ -47,6 +55,8 @@ interface ItemCardProps {
   onBringToFront: () => void
   collectionCoverPreview?: CollectionCoverPreview
   onSetCollectionCover: (cover: CollectionCoverPreview) => void
+  /** Which noun to use on the lightbox cover button. */
+  coverLabel?: 'idea' | 'event' | 'preview'
   onEditDrawing?: () => void
   onEditList?: () => void
 }
@@ -154,6 +164,7 @@ export function ItemCard({
   onBringToFront,
   collectionCoverPreview,
   onSetCollectionCover,
+  coverLabel = 'preview',
   onEditDrawing,
   onEditList,
 }: ItemCardProps) {
@@ -224,15 +235,11 @@ export function ItemCard({
   const coverForCurrentSlide = useMemo((): CollectionCoverPreview | null => {
     if (!currentLightboxSlide) return null
     if (currentLightboxSlide.kind === 'url') {
+      if (!canUseUrlAsCover(currentLightboxSlide.url)) return null
       return { itemId: item.id, candidateUrl: currentLightboxSlide.url }
     }
-    if (
-      currentLightboxSlide.attachment.type === 'image' ||
-      currentLightboxSlide.attachment.type === 'video'
-    ) {
-      return { itemId: item.id, attachmentId: currentLightboxSlide.attachment.id }
-    }
-    return null
+    if (!canUseAttachmentAsCover(currentLightboxSlide.attachment)) return null
+    return { itemId: item.id, attachmentId: currentLightboxSlide.attachment.id }
   }, [currentLightboxSlide, item.id])
 
   const isCollectionCover =
@@ -421,6 +428,7 @@ export function ItemCard({
               onClose={() => setLightbox(null)}
               onIndexChange={(index) => setLightbox({ kind: 'preview', index })}
               isCollectionCover={isCollectionCover}
+              coverLabel={coverLabel}
               onSetCollectionCover={
                 coverForCurrentSlide
                   ? () => onSetCollectionCover(coverForCurrentSlide)
@@ -468,6 +476,7 @@ export function ItemCard({
               onClose={() => setLightbox(null)}
               onIndexChange={(index) => setLightbox({ kind: 'attached', index })}
               isCollectionCover={isCollectionCover}
+              coverLabel={coverLabel}
               onSetCollectionCover={
                 coverForCurrentSlide
                   ? () => onSetCollectionCover(coverForCurrentSlide)
@@ -516,6 +525,7 @@ export function ItemCard({
               onClose={() => setLightbox(null)}
               onIndexChange={(index) => setLightbox({ kind: 'attached', index })}
               isCollectionCover={isCollectionCover}
+              coverLabel={coverLabel}
               onSetCollectionCover={
                 coverForCurrentSlide
                   ? () => onSetCollectionCover(coverForCurrentSlide)

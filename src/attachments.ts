@@ -1,3 +1,4 @@
+import { isGifMime, looksLikeGifUrl } from './images'
 import { isStoredMedia, removeStoredMedia } from './mediaStore'
 import type { Attachment, Collection, CollectionCoverPreview, Item, MediaKind } from './types'
 
@@ -77,6 +78,21 @@ export function isCollectionCoverPreview(
   if (preview.candidateUrl) return cover.candidateUrl === preview.candidateUrl
   if (preview.attachmentId) return cover.attachmentId === preview.attachmentId
   return false
+}
+
+/**
+ * Collection list covers are static images only — hide “use as preview” for
+ * videos and GIFs (ideas and events).
+ */
+export function canUseAttachmentAsCover(attachment: Attachment): boolean {
+  if (attachment.type !== 'image') return false
+  if (isGifMime(attachment.mime)) return false
+  if (looksLikeGifUrl(attachment.content)) return false
+  return true
+}
+
+export function canUseUrlAsCover(url: string): boolean {
+  return !looksLikeGifUrl(url)
 }
 
 export function clearCoverIfStale(
