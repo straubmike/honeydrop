@@ -41,17 +41,26 @@ export function joinUrl(code: string): string {
   return `${window.location.origin}${joinPath(code)}`
 }
 
+/** Keep existing `?src=` / `?qa=` (etc.) when the new path has no query of its own. */
+function withPreservedSearch(path: string): string {
+  const next = path.startsWith('/') ? path : `/${path}`
+  if (next.includes('?') || typeof window === 'undefined' || !window.location.search) {
+    return next
+  }
+  return `${next}${window.location.search}`
+}
+
 /** Update the address bar without a full navigation. */
 export function replacePath(path: string): void {
   if (typeof window === 'undefined') return
-  const next = path.startsWith('/') ? path : `/${path}`
+  const next = withPreservedSearch(path)
   if (`${window.location.pathname}${window.location.search}` === next) return
   window.history.replaceState(window.history.state, '', next)
 }
 
 export function pushPath(path: string): void {
   if (typeof window === 'undefined') return
-  const next = path.startsWith('/') ? path : `/${path}`
+  const next = withPreservedSearch(path)
   if (`${window.location.pathname}${window.location.search}` === next) return
   window.history.pushState(window.history.state, '', next)
 }
